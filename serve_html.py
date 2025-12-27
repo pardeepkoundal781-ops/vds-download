@@ -27,9 +27,9 @@ if __name__ == '__main__':
     os.chdir(DIRECTORY)
     handler = MyHTTPRequestHandler
     with socketserver.TCPServer(("", PORT), handler) as httpd:
-        print(f"✓ HTML Server running on http://localhost:{PORT}")
+        print(f"✓ HTML Server running on https://my-pro-downloader.onrender.com/:{PORT}")
         print(f"✓ Serving files from: {DIRECTORY}")
-        print(f"✓ API Server on port 8080")
+        print(f"✓ API https://my-pro-downloader.onrender.com/")
         print(f"\nOpen: http://localhost:{PORT}/index.html")
         try:
             httpd.serve_forever()
