@@ -18,24 +18,28 @@ API_KEYS = {
 }
 
 def get_ydl_opts():
-    """Returns robust yt-dlp options with Cookies support"""
-    opts = {
-        'format': 'best',
+    """Returns safe yt-dlp options for Server without FFmpeg"""
+    return {
+        # 👇 यह लाइन ऑडियो और एरर दोनों ठीक करेगी:
+        # यह सिर्फ वही फॉर्मेट ढूंढेगा जिसमें वीडियो + ऑडियो दोनों हों (भले ही क्वालिटी थोड़ी कम हो)
+        'format': 'best[height<=720][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best',
+        
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'ignoreerrors': False,
+        'ignoreerrors': True,  # एरर आने पर क्रैश नहीं होगा
         'logtostderr': False,
         'geo_bypass': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        
+        # Fake Browser (YouTube Fix)
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        },
         'source_address': '0.0.0.0', 
     }
-    
-    # ✅ Check if cookies.txt exists and use it
-    if os.path.exists('cookies.txt'):
-        opts['cookiefile'] = 'cookies.txt'
-        
-    return opts
 
 def verify_api_key(request):
     api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
@@ -43,7 +47,13 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    return send_file('index.html')
+    # चेक करें कि कुकीज़ फाइल है या नहीं
+    has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌ (YouTube needs cookies.txt)"
+    return jsonify({
+        "status": "online",
+        "cookies": has_cookies,
+        "mode": "Safe Mode (Audio Fix Applied)"
+    })
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
@@ -56,6 +66,11 @@ def get_formats():
 
     try:
         ydl_opts = get_ydl_opts()
+        
+        # Check for cookies
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             logger.info(f"Extracting: {url}")
             info = ydl.extract_info(url, download=False)
@@ -69,23 +84,33 @@ def get_formats():
             }
             
             formats = []
+            # सिर्फ वही फॉर्मेट लिस्ट करें जिनमें ऑडियो हो
             for f in info.get('formats', []):
-                formats.append({
-                    "format_id": f.get('format_id'),
-                    "ext": f.get('ext'),
-                    "height": f.get('height'),
-                    "filesize": f.get('filesize'),
-                    "vcodec": f.get('vcodec'),
-                    "acodec": f.get('acodec'),
-                    "tbr": f.get('tbr')
-                })
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                    formats.append({
+                        "format_id": f.get('format_id'),
+                        "ext": f.get('ext'),
+                        "height": f.get('height'),
+                        "filesize": f.get('filesize'),
+                        "vcodec": f.get('vcodec'),
+                        "acodec": f.get('acodec'),
+                        "tbr": f.get('tbr')
+                    })
+            
+            # अगर कोई सेफ फॉर्मेट न मिले, तो सब दिखा दें
+            if not formats:
+                 for f in info.get('formats', []):
+                    if f.get('vcodec') != 'none':
+                        formats.append(f)
 
             return jsonify({"meta": meta, "formats": formats})
 
     except Exception as e:
         logger.error(f"Error: {str(e)}")
-        # Return the actual error message so the user can see it
-        return jsonify({"error": str(e)}), 500
+        err_msg = str(e)
+        if "Sign in" in err_msg:
+            err_msg = "YouTube blocked IP. Update cookies.txt"
+        return jsonify({"error": "extract_failed", "detail": err_msg}), 500
 
 @app.route('/download', methods=['GET'])
 def download_video():
@@ -96,7 +121,17 @@ def download_video():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        opts.update({'format': format_id, 'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s')})
+        
+        if os.path.exists('cookies.txt'):
+            opts['cookiefile'] = 'cookies.txt'
+
+        # फोर्स करें कि ऑडियो वाला फॉर्मेट ही डाउनलोड हो
+        if not format_id or format_id == 'best':
+             opts['format'] = 'best[height<=720][vcodec!=none][acodec!=none]/best'
+        else:
+             opts['format'] = format_id
+
+        opts.update({'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s')})
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -113,6 +148,10 @@ def convert_mp3():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
+        
+        if os.path.exists('cookies.txt'):
+            opts['cookiefile'] = 'cookies.txt'
+
         opts.update({
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
@@ -122,7 +161,12 @@ def convert_mp3():
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            mp3_name = os.path.splitext(filename)[0] + ".mp3"
+            base, _ = os.path.splitext(filename)
+            mp3_name = base + ".mp3"
+            
+            if not os.path.exists(mp3_name):
+                 mp3_name = filename 
+
             return send_file(mp3_name, as_attachment=True, download_name=os.path.basename(mp3_name))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
