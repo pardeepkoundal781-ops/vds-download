@@ -1,10 +1,5 @@
-aiohttp>=3.8.0
-aiofiles>=0.8.0
-yt-dlp>=2023.0.0
-requests>=2.28.0
-flask==3.0.0
-gunicorn==21.2.0
-# ... other dependencies 
-pip install -r requirements.txt
-gunicorn myproject.wsgi
-gunicorn app:app
+flask
+flask-cors
+yt-dlp
+requests
+gunicorn
