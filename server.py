@@ -20,25 +20,28 @@ API_KEYS = {
 def get_ydl_opts():
     """Returns robust yt-dlp options with Cookies support"""
     opts = {
-        'format': 'best',
+        # 👇 सबसे महत्वपूर्ण बदलाव (Most Important Change):
+        # यह लाइन yt-dlp को बोलती है: "वही वीडियो लाओ जिसमें Video और Audio दोनों हों"
+        'format': 'best[vcodec!=none][acodec!=none]/best',
+        
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': False,
         'logtostderr': False,
         'geo_bypass': True,
-        # Updated User Agent to look like a modern PC
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        # Removed 'extractor_args' to avoid conflict with cookies
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        },
         'source_address': '0.0.0.0', 
     }
     
-    # ✅ Check if cookies.txt exists and debug print
+    # ✅ Check if cookies.txt exists and use it
     if os.path.exists('cookies.txt'):
-        logger.info("✅ COOKIES FOUND: Using cookies.txt for authentication")
         opts['cookiefile'] = 'cookies.txt'
-    else:
-        logger.warning("⚠️ COOKIES NOT FOUND: YouTube might block this request!")
         
     return opts
 
@@ -48,12 +51,12 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    # Debug info on home page
-    cookies_status = "✅ Found" if os.path.exists('cookies.txt') else "❌ Missing (Upload cookies.txt)"
+    # Debugging helper to check status
+    cookie_exists = os.path.exists('cookies.txt')
     return jsonify({
-        "status": "online", 
-        "message": "Server is Running!",
-        "cookies_status": cookies_status
+        "status": "online",
+        "cookies_detected": "YES ✅" if cookie_exists else "NO ❌",
+        "message": "Server is running with AUDIO FIX applied."
     })
 
 @app.route('/formats', methods=['GET'])
@@ -81,27 +84,23 @@ def get_formats():
             
             formats = []
             for f in info.get('formats', []):
-                formats.append({
-                    "format_id": f.get('format_id'),
-                    "ext": f.get('ext'),
-                    "height": f.get('height'),
-                    "filesize": f.get('filesize'),
-                    "vcodec": f.get('vcodec'),
-                    "acodec": f.get('acodec'),
-                    "tbr": f.get('tbr')
-                })
+                # सिर्फ वही फॉर्मेट दिखाएं जो वीडियो हैं (vcodec != none)
+                if f.get('vcodec') != 'none':
+                    formats.append({
+                        "format_id": f.get('format_id'),
+                        "ext": f.get('ext'),
+                        "height": f.get('height'),
+                        "filesize": f.get('filesize'),
+                        "vcodec": f.get('vcodec'),
+                        "acodec": f.get('acodec'), # Audio codec info
+                        "tbr": f.get('tbr')
+                    })
 
             return jsonify({"meta": meta, "formats": formats})
 
     except Exception as e:
-        error_str = str(e)
-        logger.error(f"Extract Error: {error_str}")
-        
-        # Friendly error messages
-        if "Sign in" in error_str:
-            return jsonify({"error": "extract_failed", "detail": "YouTube Blocked IP (Cookies required/expired)"}), 500
-        
-        return jsonify({"error": "extract_failed", "detail": error_str}), 500
+        logger.error(f"Error: {str(e)}")
+        return jsonify({"error": "extract_failed", "detail": str(e)}), 500
 
 @app.route('/download', methods=['GET'])
 def download_video():
@@ -112,7 +111,15 @@ def download_video():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        opts.update({'format': format_id, 'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s')})
+        
+        # डाउनलोड के वक्त भी Audio+Video वाला रूल लगाएं
+        # अगर यूजर ने स्पेसिफिक फॉर्मेट नहीं चुना, तो बेस्ट कंबाइंड फाइल डाउनलोड करें
+        if not format_id or format_id == 'best':
+             opts['format'] = 'best[vcodec!=none][acodec!=none]'
+        else:
+             opts['format'] = format_id
+
+        opts.update({'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s')})
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
