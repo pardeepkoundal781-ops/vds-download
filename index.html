@@ -491,8 +491,7 @@
                         <p><strong>गुणवत्ता:</strong> <span id="videoQuality">1080p</span></p>
                     </div>
                     <div class="format-options" id="formatOptions">
-                        <!-- Format buttons will be added here dynamically -->
-                    </div>
+                        </div>
                 </div>
 
             </section>
@@ -545,7 +544,7 @@
             <p>Pro Video Downloader लगभग हर लोकप्रिय प्लेटफॉर्म से वीडियो डाउनलोड करने की सुविधा देता है:</p>
             
             <h4>⭐ YouTube Video Downloader</h4>
-            <p>HD, 1080p, 4K, और 8K वीडियो डाउनलोड करें।<br>
+            <p>HD, 1080p, 4K, और 8K वीडियो डाउनलोड करें。<br>
             YouTube से MP3 कन्वर्ज़न भी उपलब्ध।</p>
             
             <h4>⭐ Facebook Video Downloader</h4>
@@ -647,7 +646,7 @@
                 <h3 class="feature-title">सभी प्लेटफॉर्म</h3>
                 <p class="feature-desc">YouTube, Instagram, Facebook, Twitter और 1000+ अन्य साइटों का समर्थन करता है</p>
             </div>
-        </section>
+        </div>
 
         <footer>
             <p>&copy; 2025 Pro Video Downloader. सर्वाधिकार सुरक्षित | बनाया गया है ❤️ से</p>
@@ -656,7 +655,8 @@
 
     <script>
         // API configuration
-        const API_BASE = 'http://localhost:8080';
+        // ✅ CHANGED: This now points to your Render Server instead of localhost
+        const API_BASE = 'https://my-pro-downloader.onrender.com';
         const API_KEY = 'VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9';
         
         // Check server connectivity on page load
@@ -674,7 +674,7 @@
                 }
             } catch (error) {
                 console.warn('⚠ Server connectivity check failed:', error.message);
-                console.warn('Make sure the server is running on http://localhost:8080');
+                console.warn('Make sure the server is running on ' + API_BASE);
             }
             return false;
         }
@@ -793,7 +793,7 @@
             } catch (error) {
                 // More specific error handling
                 if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    showError('Connection failed. Please make sure the server is running on http://localhost:8080');
+                    showError('Connection failed. Please make sure the server is online.');
                 } else {
                     showError(`Error: ${error.message}`);
                 }
