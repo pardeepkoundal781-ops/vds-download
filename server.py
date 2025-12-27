@@ -27,18 +27,18 @@ def get_ydl_opts():
         'ignoreerrors': False,
         'logtostderr': False,
         'geo_bypass': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web']
-            }
-        },
+        # Updated User Agent to look like a modern PC
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        # Removed 'extractor_args' to avoid conflict with cookies
         'source_address': '0.0.0.0', 
     }
     
-    # ✅ Check if cookies.txt exists and use it
+    # ✅ Check if cookies.txt exists and debug print
     if os.path.exists('cookies.txt'):
+        logger.info("✅ COOKIES FOUND: Using cookies.txt for authentication")
         opts['cookiefile'] = 'cookies.txt'
+    else:
+        logger.warning("⚠️ COOKIES NOT FOUND: YouTube might block this request!")
         
     return opts
 
@@ -48,7 +48,13 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    return jsonify({"status": "online", "message": "Server with Cookies Support is Running!"})
+    # Debug info on home page
+    cookies_status = "✅ Found" if os.path.exists('cookies.txt') else "❌ Missing (Upload cookies.txt)"
+    return jsonify({
+        "status": "online", 
+        "message": "Server is Running!",
+        "cookies_status": cookies_status
+    })
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
@@ -88,8 +94,14 @@ def get_formats():
             return jsonify({"meta": meta, "formats": formats})
 
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        return jsonify({"error": "extract_failed", "detail": str(e)}), 500
+        error_str = str(e)
+        logger.error(f"Extract Error: {error_str}")
+        
+        # Friendly error messages
+        if "Sign in" in error_str:
+            return jsonify({"error": "extract_failed", "detail": "YouTube Blocked IP (Cookies required/expired)"}), 500
+        
+        return jsonify({"error": "extract_failed", "detail": error_str}), 500
 
 @app.route('/download', methods=['GET'])
 def download_video():
