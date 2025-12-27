@@ -4,6 +4,4 @@ yt-dlp
 requests
 gunicorn
 aiohttp
-git add requirements.txt
-git commit -m "Add missing aiohttp dependency"
-git push origin main
+asyncio
