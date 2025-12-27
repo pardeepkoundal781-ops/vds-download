@@ -18,12 +18,10 @@ API_KEYS = {
 }
 
 def get_ydl_opts():
-    """Returns robust yt-dlp options with Cookies support"""
+    """Returns robust yt-dlp options"""
     opts = {
-        # 👇 सबसे महत्वपूर्ण बदलाव (Most Important Change):
-        # यह लाइन yt-dlp को बोलती है: "वही वीडियो लाओ जिसमें Video और Audio दोनों हों"
+        # 👇 सबसे जरूरी लाइन: यह सिर्फ ऑडियो+वीडियो वाली फाइल ढूंढेगा
         'format': 'best[vcodec!=none][acodec!=none]/best',
-        
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
@@ -39,7 +37,7 @@ def get_ydl_opts():
         'source_address': '0.0.0.0', 
     }
     
-    # ✅ Check if cookies.txt exists and use it
+    # Check for cookies
     if os.path.exists('cookies.txt'):
         opts['cookiefile'] = 'cookies.txt'
         
@@ -51,12 +49,11 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    # Debugging helper to check status
-    cookie_exists = os.path.exists('cookies.txt')
+    cookie_status = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌"
     return jsonify({
         "status": "online",
-        "cookies_detected": "YES ✅" if cookie_exists else "NO ❌",
-        "message": "Server is running with AUDIO FIX applied."
+        "cookies_found": cookie_status,
+        "message": "Server with AUDIO FIX is running!"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -84,17 +81,31 @@ def get_formats():
             
             formats = []
             for f in info.get('formats', []):
-                # सिर्फ वही फॉर्मेट दिखाएं जो वीडियो हैं (vcodec != none)
-                if f.get('vcodec') != 'none':
+                # 👇 फिल्टर: सिर्फ वही फॉर्मेट दिखाएं जिसमें Audio (acodec) मौजूद हो
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     formats.append({
                         "format_id": f.get('format_id'),
                         "ext": f.get('ext'),
                         "height": f.get('height'),
                         "filesize": f.get('filesize'),
                         "vcodec": f.get('vcodec'),
-                        "acodec": f.get('acodec'), # Audio codec info
+                        "acodec": f.get('acodec'),
                         "tbr": f.get('tbr')
                     })
+
+            # अगर कोई कंबाइंड फॉर्मेट न मिले (कभी-कभी होता है), तो बेस्ट वीडियो दिखा दें
+            if not formats:
+                 for f in info.get('formats', []):
+                    if f.get('vcodec') != 'none':
+                         formats.append({
+                            "format_id": f.get('format_id'),
+                            "ext": f.get('ext'),
+                            "height": f.get('height'),
+                            "filesize": f.get('filesize'),
+                            "vcodec": f.get('vcodec'),
+                            "acodec": f.get('acodec'),
+                            "tbr": f.get('tbr')
+                        })
 
             return jsonify({"meta": meta, "formats": formats})
 
@@ -112,8 +123,7 @@ def download_video():
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
         
-        # डाउनलोड के वक्त भी Audio+Video वाला रूल लगाएं
-        # अगर यूजर ने स्पेसिफिक फॉर्मेट नहीं चुना, तो बेस्ट कंबाइंड फाइल डाउनलोड करें
+        # अगर फॉर्मेट बेस्ट है तो भी Audio+Video वाला ही उठाएं
         if not format_id or format_id == 'best':
              opts['format'] = 'best[vcodec!=none][acodec!=none]'
         else:
@@ -145,7 +155,14 @@ def convert_mp3():
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            mp3_name = os.path.splitext(filename)[0] + ".mp3"
+            # Find the actual file created (mp3)
+            base, _ = os.path.splitext(filename)
+            mp3_name = base + ".mp3"
+            
+            # Sometimes yt-dlp doesn't rename automatically in code, checking existence
+            if not os.path.exists(mp3_name):
+                 mp3_name = filename # Fallback
+
             return send_file(mp3_name, as_attachment=True, download_name=os.path.basename(mp3_name))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
