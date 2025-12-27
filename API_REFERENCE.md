@@ -6,13 +6,13 @@
 - **Status**: Running ✓
 - **Technology**: Python aiohttp
 - **Host**: http://0.0.0.0:8080
-- **Local Access**: http://localhost:8080
+- **Local Access**:[ https://my-pro-downloader.onrender.com
 
 ### HTML Server (Port 3000)
 - **Status**: Running ✓
 - **Technology**: Python SimpleHTTPServer
 - **Purpose**: Serves website files
-- **Local Access**: http://localhost:3000
+- **Local Access**: [https://my-pro-downloader.onrender.com
 
 ---
 
@@ -20,7 +20,7 @@
 
 ### 1. Root Endpoint
 ```
-GET http://localhost:8080/
+GET http:[//localhost:8080/](https://my-pro-downloader.onrender.com)
 Headers: X-API-KEY: VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9
 ```
 
@@ -34,7 +34,7 @@ Headers: X-API-KEY: VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3
 
 ### 2. Get Video Formats
 ```
-GET http://localhost:8080/formats?url=<VIDEO_URL>&api_key=<API_KEY>
+GET https://my-pro-downloader.onrender.com/formats?url=<VIDEO_URL>&api_key=<API_KEY>
 ```
 
 **Parameters:**
@@ -68,7 +68,7 @@ GET http://localhost:8080/formats?url=<VIDEO_URL>&api_key=<API_KEY>
 
 ### 3. Download Video
 ```
-GET http://localhost:8080/download?url=<VIDEO_URL>&format_id=<FORMAT_ID>&api_key=<API_KEY>
+GET [https://my-pro-downloader.onrender.com/download?url=<VIDEO_URL>&format_id=<FORMAT_ID>&api_key=<API_KEY>
 ```
 
 **Parameters:**
@@ -108,13 +108,13 @@ GET http://localhost:8080/convert_mp3?url=<VIDEO_URL>&format_id=<FORMAT_ID>&bitr
 ## ⚙️ Configuration
 
 ### server.py
-- **Port**: 8080 (from environment or default)
+- **Port**: https://my-pro-downloader.onrender.com/ (from environment or default)
 - **Host**: 0.0.0.0
 - **Rate Limit**: 10 requests per 60 seconds per IP
 - **Max File Size**: 4 GB
 
 ### serve_html.py
-- **Port**: 3000
+- **Port**: https://my-pro-downloader.onrender.com/
 - **CORS**: Enabled for all origins
 - **Directory**: Current folder (all HTML files)
 
@@ -176,7 +176,7 @@ python serve_html.py
 
 ### Access Website
 ```
-http://localhost:3000/index.html
+https://my-pro-downloader.onrender.com/index.html
 ```
 
 ### Test API
