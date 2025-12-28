@@ -20,10 +20,7 @@ API_KEYS = {
 def get_ydl_opts():
     """Returns robust yt-dlp options with Cookies support"""
     opts = {
-        # 👇 सबसे महत्वपूर्ण बदलाव (Most Important Change):
-        # यह लाइन yt-dlp को बोलती है: "वही वीडियो लाओ जिसमें Video और Audio दोनों हों"
-        'format': 'best[vcodec!=none][acodec!=none]/best',
-        
+        'format': 'best',
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
@@ -51,13 +48,7 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    # Debugging helper to check status
-    cookie_exists = os.path.exists('cookies.txt')
-    return jsonify({
-        "status": "online",
-        "cookies_detected": "YES ✅" if cookie_exists else "NO ❌",
-        "message": "Server is running with AUDIO FIX applied."
-    })
+    return jsonify({"status": "online", "message": "Server with Cookies Support is Running!"})
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
@@ -84,17 +75,15 @@ def get_formats():
             
             formats = []
             for f in info.get('formats', []):
-                # सिर्फ वही फॉर्मेट दिखाएं जो वीडियो हैं (vcodec != none)
-                if f.get('vcodec') != 'none':
-                    formats.append({
-                        "format_id": f.get('format_id'),
-                        "ext": f.get('ext'),
-                        "height": f.get('height'),
-                        "filesize": f.get('filesize'),
-                        "vcodec": f.get('vcodec'),
-                        "acodec": f.get('acodec'), # Audio codec info
-                        "tbr": f.get('tbr')
-                    })
+                formats.append({
+                    "format_id": f.get('format_id'),
+                    "ext": f.get('ext'),
+                    "height": f.get('height'),
+                    "filesize": f.get('filesize'),
+                    "vcodec": f.get('vcodec'),
+                    "acodec": f.get('acodec'),
+                    "tbr": f.get('tbr')
+                })
 
             return jsonify({"meta": meta, "formats": formats})
 
@@ -111,15 +100,7 @@ def download_video():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        
-        # डाउनलोड के वक्त भी Audio+Video वाला रूल लगाएं
-        # अगर यूजर ने स्पेसिफिक फॉर्मेट नहीं चुना, तो बेस्ट कंबाइंड फाइल डाउनलोड करें
-        if not format_id or format_id == 'best':
-             opts['format'] = 'best[vcodec!=none][acodec!=none]'
-        else:
-             opts['format'] = format_id
-
-        opts.update({'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s')})
+        opts.update({'format': format_id, 'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s')})
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
