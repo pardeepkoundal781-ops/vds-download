@@ -20,45 +20,53 @@ API_KEYS = {
     "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
-# 👇 AUTO FFmpeg (सिर्फ MP3 के लिए कोशिश करेगा)
+# 👇 AUTO FFmpeg INSTALLER (जरूरी है)
 def install_ffmpeg():
-    if os.path.exists("./ffmpeg"): return "./ffmpeg"
+    """Download and install FFmpeg automatically"""
+    if os.path.exists("./ffmpeg"):
+        return "./ffmpeg"
+    
+    logger.info("⏳ FFmpeg not found. Downloading...")
     try:
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         filename = "ffmpeg.tar.xz"
         urllib.request.urlretrieve(url, filename)
-        with tarfile.open(filename, "r:xz") as tar: tar.extractall()
+        
+        with tarfile.open(filename, "r:xz") as tar:
+            tar.extractall()
+            
         for root, dirs, files in os.walk("."):
             if "ffmpeg" in files:
                 src = os.path.join(root, "ffmpeg")
                 shutil.move(src, "./ffmpeg")
                 os.chmod("./ffmpeg", 0o755)
                 break
+                
         if os.path.exists(filename): os.remove(filename)
         return "./ffmpeg"
-    except: return None
+    except Exception as e:
+        logger.error(f"❌ FFmpeg error: {e}")
+        return None
 
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns SAFE options ensuring AUDIO works"""
-    return {
-        # 👇 AUDIO FIX (सबसे महत्वपूर्ण बदलाव):
-        # यह लाइन कहती है: "सिर्फ वही फाइल लाओ जिसमें वीडियो और ऑडियो दोनों हों"
-        # यह FFmpeg का इंतज़ार नहीं करेगा, सीधा चलने वाली फाइल देगा।
-        'format': 'best[vcodec!=none][acodec!=none]',
+    """Returns robust yt-dlp options"""
+    opts = {
+        'format': 'bestvideo+bestaudio/best',
+        'merge_output_format': 'mp4',
         
-        # 👇 FILE NAME FIX (Error 36): नाम 50 अक्षर से ज्यादा नहीं होगा
+        # 👇 FIX 1: फाइल नाम को 50 अक्षरों तक छोटा कर दो (Error 36 Fix)
         'trim_file_name': 50,
         
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': True,
+        'logtostderr': False,
         'geo_bypass': True,
-        'force_ipv4': True, # Facebook Fix
+        'force_ipv4': True,
         
-        # Fake Browser (YouTube Fix)
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'extractor_args': {
             'youtube': {
@@ -67,6 +75,11 @@ def get_ydl_opts():
         },
         'source_address': '0.0.0.0',
     }
+    
+    if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+    if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
+        
+    return opts
 
 def verify_api_key(request):
     api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
@@ -74,41 +87,45 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌ (YouTube needs cookies.txt)"
+    has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌"
+    has_ffmpeg = "YES ✅" if os.path.exists('./ffmpeg') else "NO ❌"
     return jsonify({
         "status": "online",
         "cookies": has_cookies,
-        "mode": "Safe Audio Mode (Audio Guaranteed)"
+        "ffmpeg": has_ffmpeg,
+        "mode": "Ultimate Mode (Long Name Fix)"
     })
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
     if not verify_api_key(request): return jsonify({"error": "Invalid API Key"}), 401
     url = request.args.get('url')
-    
+    if not url: return jsonify({"error": "Missing URL"}), 400
+
     try:
-        opts = get_ydl_opts()
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
-        
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl_opts = get_ydl_opts()
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
             meta = {
                 "id": info.get('id'),
                 "title": info.get('title'),
+                "duration": info.get('duration'),
+                "uploader": info.get('uploader'),
                 "thumbnail": info.get('thumbnail'),
             }
             
             formats = []
             for f in info.get('formats', []):
-                # लिस्ट में भी सिर्फ ऑडियो वाली फाइलें दिखाएं
-                if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                    formats.append({
-                        "format_id": f.get('format_id'),
-                        "ext": f.get('ext'),
-                        "height": f.get('height'),
-                        "filesize": f.get('filesize'),
-                    })
+                formats.append({
+                    "format_id": f.get('format_id'),
+                    "ext": f.get('ext'),
+                    "height": f.get('height'),
+                    "filesize": f.get('filesize'),
+                    "vcodec": f.get('vcodec'),
+                    "acodec": f.get('acodec'),
+                    "tbr": f.get('tbr')
+                })
 
             return jsonify({"meta": meta, "formats": formats})
     except Exception as e:
@@ -123,14 +140,13 @@ def download_video():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
-        # Force safe format with Audio
         if not format_id or format_id == 'best':
-             opts['format'] = 'best[vcodec!=none][acodec!=none]'
+             opts['format'] = 'bestvideo+bestaudio/best'
         else:
              opts['format'] = format_id
 
+        # 👇 FIX: डाउनलोड करते वक्त फाइल नाम को छोटा (Trim) करें
         opts.update({'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s')})
         
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -148,32 +164,25 @@ def convert_mp3():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
-        # MP3 Fallback: अगर FFmpeg है तो कन्वर्ट करो, नहीं तो डायरेक्ट डाउनलोड
-        if FFMPEG_PATH:
-            opts['ffmpeg_location'] = FFMPEG_PATH
-            opts.update({
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}],
-            })
-        else:
-            opts.update({
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-            })
+        # 👇 FIX: MP3 के लिए भी छोटा नाम
+        opts.update({
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        })
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
+            
             base, _ = os.path.splitext(filename)
             mp3_name = base + ".mp3"
             
-            # Rename if simple download
-            if not os.path.exists(mp3_name) and os.path.exists(filename):
-                os.rename(filename, mp3_name)
-                
             return send_file(mp3_name, as_attachment=True, download_name=os.path.basename(mp3_name))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
