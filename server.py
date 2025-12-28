@@ -4,9 +4,6 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
 import tempfile
-import urllib.request
-import tarfile
-import shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,56 +17,33 @@ API_KEYS = {
     "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
-# 👇 AUTO FFmpeg INSTALLER
-def install_ffmpeg():
-    if os.path.exists("./ffmpeg"): return "./ffmpeg"
-    try:
-        url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-        filename = "ffmpeg.tar.xz"
-        urllib.request.urlretrieve(url, filename)
-        with tarfile.open(filename, "r:xz") as tar: tar.extractall()
-        for root, dirs, files in os.walk("."):
-            if "ffmpeg" in files:
-                src = os.path.join(root, "ffmpeg")
-                shutil.move(src, "./ffmpeg")
-                os.chmod("./ffmpeg", 0o755)
-                break
-        if os.path.exists(filename): os.remove(filename)
-        return "./ffmpeg"
-    except: return None
-
-FFMPEG_PATH = install_ffmpeg()
-
 def get_ydl_opts():
-    """Returns options optimized to bypass IP blocks"""
-    return {
-        # 👇 AUDIO/VIDEO FIX: FFmpeg नहीं है तो Safe Mode, है तो Best Mode
-        'format': 'bestvideo+bestaudio/best' if FFMPEG_PATH else 'best[height<=720][vcodec!=none][acodec!=none]',
-        'merge_output_format': 'mp4',
-        
-        # 👇 FILE NAME FIX: (Error 36)
-        'trim_file_name': 50,
+    """Returns robust yt-dlp options with Cookies support"""
+    opts = {
+        # 👇 सबसे महत्वपूर्ण बदलाव (Most Important Change):
+        # यह लाइन yt-dlp को बोलती है: "वही वीडियो लाओ जिसमें Video और Audio दोनों हों"
+        'format': 'best[vcodec!=none][acodec!=none]/best',
         
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'ignoreerrors': True,
+        'ignoreerrors': False,
+        'logtostderr': False,
         'geo_bypass': True,
-        'force_ipv4': True,
-        
-        # 👇 YOUTUBE BYPASS FIX (Most Important)
-        # हम 'ios' client का उपयोग करेंगे क्योंकि यह अक्सर IP ब्लॉक को बायपास कर देता है
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'web'] 
+                'player_client': ['android', 'web']
             }
         },
-        
-        # Fake User Agent (iPhone)
-        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        
-        'source_address': '0.0.0.0',
+        'source_address': '0.0.0.0', 
     }
+    
+    # ✅ Check if cookies.txt exists and use it
+    if os.path.exists('cookies.txt'):
+        opts['cookiefile'] = 'cookies.txt'
+        
+    return opts
 
 def verify_api_key(request):
     api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
@@ -77,41 +51,55 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌"
-    return jsonify({"status": "online", "cookies": has_cookies, "mode": "YouTube iOS Bypass"})
+    # Debugging helper to check status
+    cookie_exists = os.path.exists('cookies.txt')
+    return jsonify({
+        "status": "online",
+        "cookies_detected": "YES ✅" if cookie_exists else "NO ❌",
+        "message": "Server is running with AUDIO FIX applied."
+    })
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
-    if not verify_api_key(request): return jsonify({"error": "Invalid API Key"}), 401
+    if not verify_api_key(request):
+        return jsonify({"error": "Invalid API Key"}), 401
+
     url = request.args.get('url')
-    
+    if not url:
+        return jsonify({"error": "URL parameter is required"}), 400
+
     try:
-        opts = get_ydl_opts()
-        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
-        
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl_opts = get_ydl_opts()
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            logger.info(f"Extracting: {url}")
             info = ydl.extract_info(url, download=False)
             
             meta = {
                 "id": info.get('id'),
                 "title": info.get('title'),
                 "duration": info.get('duration'),
+                "uploader": info.get('uploader'),
                 "thumbnail": info.get('thumbnail'),
             }
             
             formats = []
             for f in info.get('formats', []):
+                # सिर्फ वही फॉर्मेट दिखाएं जो वीडियो हैं (vcodec != none)
                 if f.get('vcodec') != 'none':
                     formats.append({
                         "format_id": f.get('format_id'),
                         "ext": f.get('ext'),
                         "height": f.get('height'),
                         "filesize": f.get('filesize'),
+                        "vcodec": f.get('vcodec'),
+                        "acodec": f.get('acodec'), # Audio codec info
+                        "tbr": f.get('tbr')
                     })
 
             return jsonify({"meta": meta, "formats": formats})
+
     except Exception as e:
+        logger.error(f"Error: {str(e)}")
         return jsonify({"error": "extract_failed", "detail": str(e)}), 500
 
 @app.route('/download', methods=['GET'])
@@ -123,13 +111,15 @@ def download_video():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
-        if format_id and format_id != 'best':
+        # डाउनलोड के वक्त भी Audio+Video वाला रूल लगाएं
+        # अगर यूजर ने स्पेसिफिक फॉर्मेट नहीं चुना, तो बेस्ट कंबाइंड फाइल डाउनलोड करें
+        if not format_id or format_id == 'best':
+             opts['format'] = 'best[vcodec!=none][acodec!=none]'
+        else:
              opts['format'] = format_id
 
-        opts.update({'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s')})
+        opts.update({'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s')})
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -146,36 +136,19 @@ def convert_mp3():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
-        
-        # Smart MP3 Logic
-        if FFMPEG_PATH:
-            opts.update({
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}],
-            })
-        else:
-            opts.update({
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-            })
+        opts.update({
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
+        })
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            
-            base, _ = os.path.splitext(filename)
-            mp3_name = base + ".mp3"
-            
-            if not os.path.exists(mp3_name) and os.path.exists(filename):
-                os.rename(filename, mp3_name)
-                
+            mp3_name = os.path.splitext(filename)[0] + ".mp3"
             return send_file(mp3_name, as_attachment=True, download_name=os.path.basename(mp3_name))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    if not os.path.exists("./ffmpeg"): install_ffmpeg()
     app.run(host='0.0.0.0', port=8080)
