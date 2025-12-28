@@ -21,7 +21,7 @@ def get_ydl_opts():
     """Returns robust yt-dlp options with Cookies support"""
     return {
         # 👇 FIX 1: वीडियो और ऑडियो वाली सिंगल फाइल ही डाउनलोड करो (Max 720p)
-        # इससे बिना FFmpeg के भी वीडियो डाउनलोड होगी और आवाज भी आएगी
+        # 'best' की जगह यह लंबा कोड लिखें ताकि बिना FFmpeg के वीडियो चले
         'format': 'best[height<=720][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best',
         
         'quiet': True,
@@ -31,7 +31,7 @@ def get_ydl_opts():
         'logtostderr': False,
         'geo_bypass': True,
         
-        # 👇 FIX 2: Force IPv4 (Facebook Error 36 Fix)
+        # 👇 FIX 2: Facebook Error 36 के लिए यह लाइन जरूरी है
         'force_ipv4': True,
         
         # 👇 FIX 3: Fake Browser User Agent (YouTube Fix)
