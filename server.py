@@ -31,11 +31,11 @@ def get_ydl_opts():
         'logtostderr': False,
         'geo_bypass': True,
         
-        # 👇 FIX 2: Fake Browser User Agent (YouTube Fix)
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        
-        # 👇 FIX 3: Force IPv4 (Facebook Error 36 Fix)
+        # 👇 FIX 2: Force IPv4 (Facebook Error 36 Fix)
         'force_ipv4': True,
+        
+        # 👇 FIX 3: Fake Browser User Agent (YouTube Fix)
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         
         'extractor_args': {
             'youtube': {
@@ -125,7 +125,7 @@ def download_video():
         opts = get_ydl_opts()
         if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
 
-        # Force safe format selection
+        # Force safe format selection (720p or lower with audio)
         if not format_id or format_id == 'best':
              opts['format'] = 'best[height<=720][vcodec!=none][acodec!=none]/best'
         else:
@@ -150,11 +150,11 @@ def convert_mp3():
         opts = get_ydl_opts()
         if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
 
-        # 👇 MP3 FIX: FFmpeg के बिना काम करने वाला तरीका
+        # 👇 FIX: FFmpeg के बिना काम करने वाला तरीका
+        # हम 'bestaudio' डाउनलोड करेंगे और postprocessors हटा देंगे
         opts.update({
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-            # 'postprocessors': [] <-- यह लाइन हटा दी है ताकि एरर न आए
         })
         
         with yt_dlp.YoutubeDL(opts) as ydl:
