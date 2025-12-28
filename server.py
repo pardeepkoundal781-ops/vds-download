@@ -20,7 +20,8 @@ API_KEYS = {
 def get_ydl_opts():
     """Returns safe options that work WITHOUT FFmpeg"""
     return {
-        # 👇 वीडियो के लिए: सिर्फ वही फाइल लाओ जिसमें ऑडियो+वीडियो जुड़ा हुआ हो (Max 720p)
+        # 👇 वीडियो फिक्स: सिर्फ वही फाइल लाओ जिसमें ऑडियो+वीडियो जुड़ा हुआ हो (Max 720p)
+        # इससे Facebook/YouTube/Pinterest बिना FFmpeg के चल जाएंगे
         'format': 'best[height<=720][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best',
         
         'quiet': True,
@@ -30,7 +31,7 @@ def get_ydl_opts():
         'logtostderr': False,
         'geo_bypass': True,
         
-        # Fake Browser (YouTube Fix)
+        # Fake Browser (YouTube Blocking Fix)
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'extractor_args': {
             'youtube': {
@@ -93,7 +94,7 @@ def get_formats():
                         "tbr": f.get('tbr')
                     })
             
-            # अगर सेफ फॉर्मेट न मिले, तो सब दिखा दो
+            # अगर सेफ फॉर्मेट न मिले, तो सब दिखा दो (Fallback)
             if not formats:
                  for f in info.get('formats', []):
                     if f.get('vcodec') != 'none':
@@ -103,7 +104,11 @@ def get_formats():
 
     except Exception as e:
         logger.error(f"Error: {str(e)}")
-        return jsonify({"error": "extract_failed", "detail": str(e)}), 500
+        # यूजर को साफ एरर दिखाएं
+        err_msg = str(e)
+        if "Sign in" in err_msg:
+            err_msg = "YouTube blocked IP. Please update cookies.txt."
+        return jsonify({"error": "extract_failed", "detail": err_msg}), 500
 
 @app.route('/download', methods=['GET'])
 def download_video():
@@ -116,7 +121,7 @@ def download_video():
         opts = get_ydl_opts()
         if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
 
-        # Force safe format
+        # फोर्स करें कि सेफ फॉर्मेट ही डाउनलोड हो
         if not format_id or format_id == 'best':
              opts['format'] = 'best[height<=720][vcodec!=none][acodec!=none]/best'
         else:
@@ -145,16 +150,18 @@ def convert_mp3():
         opts.update({
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-            # 'postprocessors': []  <-- यह लाइन हटा दी है ताकि एरर न आए
+            # 'postprocessors' वाली लाइन हटा दी है ताकि एरर न आए
         })
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # फाइल का नाम बदल कर .mp3 जैसा दिखाएं (Browser समझ जाएगा)
+            # फाइल का एक्सटेंशन चेक करें (ज्यादातर m4a या webm होगा)
             base, ext = os.path.splitext(filename)
-            new_name = base + ".m4a" # ज्यादातर m4a ही होता है
+            
+            # ब्राउज़र को .m4a भेजें (यह हर जगह बजता है)
+            new_name = base + ".m4a" 
             
             return send_file(filename, as_attachment=True, download_name=os.path.basename(new_name))
     except Exception as e:
