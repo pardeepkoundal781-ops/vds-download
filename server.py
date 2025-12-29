@@ -20,7 +20,7 @@ API_KEYS = {
     "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
-# 👇 AUTO FFmpeg INSTALLER
+# 👇 AUTO FFmpeg INSTALLER (Audio के लिए जरूरी)
 def install_ffmpeg():
     if os.path.exists("./ffmpeg"): return "./ffmpeg"
     try:
@@ -41,13 +41,13 @@ def install_ffmpeg():
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns options optimized to bypass IP blocks"""
+    """Returns options optimized to bypass YouTube IP blocks"""
     return {
-        # 👇 AUDIO/VIDEO FIX: FFmpeg नहीं है तो Safe Mode, है तो Best Mode
+        # 👇 AUDIO FIX: अगर FFmpeg है तो Best, नहीं तो Safe Mode (720p)
         'format': 'bestvideo+bestaudio/best' if FFMPEG_PATH else 'best[height<=720][vcodec!=none][acodec!=none]',
         'merge_output_format': 'mp4',
         
-        # 👇 FILE NAME FIX: (Error 36)
+        # 👇 ERROR 36 FIX: फाइल नाम छोटा रखें
         'trim_file_name': 50,
         
         'quiet': True,
@@ -57,15 +57,15 @@ def get_ydl_opts():
         'geo_bypass': True,
         'force_ipv4': True,
         
-        # 👇 YOUTUBE BYPASS FIX (Most Important)
-        # हम 'ios' client का उपयोग करेंगे क्योंकि यह अक्सर IP ब्लॉक को बायपास कर देता है
+        # 👇 YOUTUBE FIX (सबसे महत्वपूर्ण बदलाव)
+        # हम 'android' की जगह 'ios' (iPhone) यूज़ करेंगे
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'web'] 
             }
         },
         
-        # Fake User Agent (iPhone)
+        # Fake iPhone User Agent
         'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         
         'source_address': '0.0.0.0',
@@ -78,7 +78,11 @@ def verify_api_key(request):
 @app.route('/')
 def home():
     has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌"
-    return jsonify({"status": "online", "cookies": has_cookies, "mode": "YouTube iOS Bypass"})
+    return jsonify({
+        "status": "online", 
+        "cookies": has_cookies, 
+        "mode": "YouTube iOS Bypass Mode"
+    })
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
@@ -88,6 +92,7 @@ def get_formats():
     try:
         opts = get_ydl_opts()
         if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+        # YouTube के लिए cookies.txt बहुत जरूरी है
         if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -149,7 +154,6 @@ def convert_mp3():
         if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
         if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
-        # Smart MP3 Logic
         if FFMPEG_PATH:
             opts.update({
                 'format': 'bestaudio/best',
