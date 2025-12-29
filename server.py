@@ -1,51 +1,4 @@
-"""
-server.py
 
-Robust aiohttp backend for video extraction & download using either the yt-dlp Python API or —
-if Python was built without SSL support (ModuleNotFoundError: No module named 'ssl') —
-a fallback to the yt-dlp CLI binary via subprocess is used.
-
-Features:
-- Extract formats (144p...4k + audio-only)
-- Download selected format and stream to client
-- Convert to MP3 (ffmpeg)
-- API Key protection (X-API-KEY header or ?api_key=...)
-- Simple in-memory IP rate limiting
-- Server-side proxying to avoid CORS
-
-Notes about the SSL error:
-- If Python is missing the `ssl` module (commonly occurs when Python was compiled without OpenSSL), importing the `yt_dlp` Python package will fail because it imports `ssl`.
-- This server detects that situation and will automatically use the `yt-dlp` CLI (executable) instead of the Python package.
-- Make sure `yt-dlp` (executable) is available in PATH when running in fallback mode:
-    pip install yt-dlp  # installs both Python package and a console script named `yt-dlp`
-    or
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp
-
-Requirements:
-- Python 3.9+
-- pip packages: aiohttp, aiofiles (yt-dlp python package optional if your Python has ssl)
-  - if Python has ssl you may `pip install yt-dlp`
-  - if Python lacks ssl, install the yt-dlp executable (see above)
-- ffmpeg must be installed & available in PATH
-
-Usage:
-1) Set environment variable API_KEY or edit DEFAULT_API_KEY below.
-   export API_KEY=supersecretkey
-2) Install requirements:
-   pip install aiohttp aiofiles
-   (optional: pip install yt-dlp if your Python has ssl support)
-3) Run:
-   python server.py
-
-Endpoints:
-- GET  /formats?url={VIDEO_URL}  -> JSON list of formats
-- GET  /download?url={VIDEO_URL}&format_id={format_id} -> streams chosen format
-- GET  /convert_mp3?url={VIDEO_URL}&format_id={format_id}&bitrate=192k -> streams mp3
-
-Security & Production Notes:
-- This is a starting implementation. For production add persistent rate-limit store (redis), disk quotas, authentication, HTTPS, background cleanup and quotas.
-- Downloading copyrighted content for distribution may violate terms. Use responsibly.
-"""
 
 import os
 import asyncio
@@ -56,6 +9,32 @@ import subprocess
 import time
 from aiohttp import web
 import aiofiles
+import os
+import logging
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+import yt_dlp
+import tempfile
+  
+    # ✅ Check if cookies.txt exists and use it
+    if os.path.exists('cookies.txt'):
+        opts['cookiefile'] = 'cookies.txt'
+        
+    return opts
+
+def verify_api_key(request):
+    api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
+    return api_key in API_KEYS
+
+@app.route('/')
+def home():
+    # Debugging helper to check status
+    cookie_exists = os.path.exists('cookies.txt')
+    return jsonify({
+        "status": "online",
+        "cookies_detected": "YES ✅" if cookie_exists else "NO ❌",
+        "message": "Server is running with AUDIO FIX applied."
+    })
 
 # ---------- Configuration ----------
 DEFAULT_API_KEY = os.environ.get('API_KEY', 'VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9')
