@@ -20,7 +20,7 @@ API_KEYS = {
     "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
-# 👇 1. AUTO FFmpeg INSTALLER (Audio Fix)
+# 👇 1. AUTO FFmpeg INSTALLER (जरूरी है MP3 और Audio के लिए)
 def install_ffmpeg():
     if os.path.exists("./ffmpeg"): return "./ffmpeg"
     try:
@@ -37,37 +37,32 @@ def install_ffmpeg():
                 break
         if os.path.exists(filename): os.remove(filename)
         return "./ffmpeg"
-    except: return None
+    except Exception as e:
+        logger.error(f"FFmpeg install error: {e}")
+        return None
 
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns options with ALL FIXES applied"""
+    """Returns robust options for all platforms"""
     return {
-        # 👇 2. FORMAT FIX: अगर FFmpeg है तो Best Quality, नहीं तो Safe Mode
-        'format': 'bestvideo+bestaudio/best' if FFMPEG_PATH else 'best[height<=720][vcodec!=none][acodec!=none]',
+        'format': 'bestvideo+bestaudio/best', # Best Quality
         'merge_output_format': 'mp4',
-        
-        # 👇 3. ERROR 36 FIX: फाइल का नाम 50 अक्षरों से ज्यादा नहीं होगा
-        'trim_file_name': 50,
-        
+        'trim_file_name': 50, # Error 36 Fix
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'geo_bypass': True,
-        'force_ipv4': True, # Network Fix
+        'force_ipv4': True, # Facebook Fix
         
-        # 👇 4. YOUTUBE FIX: 'android' की जगह 'ios' (iPhone) क्लाइंट
+        # 👇 YouTube Bypass (iOS Client)
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'web'] 
             }
         },
-        
-        # Fake iPhone User Agent
         'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        
         'source_address': '0.0.0.0',
     }
 
@@ -83,7 +78,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Final Fix Mode (iOS + FFmpeg + Trim)"
+        "mode": "Ultimate Mode (MP3 & Audio Fixed)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -108,12 +103,18 @@ def get_formats():
             
             formats = []
             for f in info.get('formats', []):
-                if f.get('vcodec') != 'none':
+                # 👇 FIX: अब यह Audio और Video दोनों दिखाएगा
+                is_video = f.get('vcodec') != 'none'
+                is_audio = f.get('acodec') != 'none'
+                
+                if is_video or is_audio:
                     formats.append({
                         "format_id": f.get('format_id'),
                         "ext": f.get('ext'),
-                        "height": f.get('height'),
+                        "height": f.get('height'), # 144, 360, 720 etc.
+                        "abr": f.get('abr'),       # Audio Bitrate (e.g. 128, 192)
                         "filesize": f.get('filesize'),
+                        "type": "video" if is_video else "audio" # Frontend को पता चलेगा
                     })
 
             return jsonify({"meta": meta, "formats": formats})
@@ -135,7 +136,6 @@ def download_video():
         if format_id and format_id != 'best':
              opts['format'] = format_id
 
-        # डाउनलोड के वक्त नाम छोटा करें
         opts.update({'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s')})
         
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -156,14 +156,19 @@ def convert_mp3():
         if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
         if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
-        # MP3 लॉजिक: अगर FFmpeg है तो Convert, नहीं तो Direct
+        # 👇 MP3 HIGH QUALITY FIX
         if FFMPEG_PATH:
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}],
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192', # 192 High Quality
+                }],
             })
         else:
+            # Fallback if FFmpeg fails
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
@@ -176,7 +181,6 @@ def convert_mp3():
             base, _ = os.path.splitext(filename)
             mp3_name = base + ".mp3"
             
-            # अगर फाइल कनवर्ट नहीं हुई तो रिनेम कर दो
             if not os.path.exists(mp3_name) and os.path.exists(filename):
                 os.rename(filename, mp3_name)
                 
