@@ -20,7 +20,7 @@ API_KEYS = {
     "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
-# 👇 1. AUTO FFmpeg INSTALLER (जरूरी है MP3 और Audio के लिए)
+# 👇 1. AUTO FFmpeg INSTALLER (ऑडियो और MP3 के लिए जरूरी)
 def install_ffmpeg():
     if os.path.exists("./ffmpeg"): return "./ffmpeg"
     try:
@@ -45,8 +45,8 @@ FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
     """Returns robust options for all platforms"""
-    return {
-        'format': 'bestvideo+bestaudio/best', # Best Quality
+    opts = {
+        'format': 'bestvideo+bestaudio/best', # Best Quality Merge
         'merge_output_format': 'mp4',
         'trim_file_name': 50, # Error 36 Fix
         'quiet': True,
@@ -54,9 +54,9 @@ def get_ydl_opts():
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'geo_bypass': True,
-        'force_ipv4': True, # Facebook Fix
+        'force_ipv4': True, # Facebook Network Fix
         
-        # 👇 YouTube Bypass (iOS Client)
+        # 👇 YouTube Fix (iOS Client)
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'web'] 
@@ -65,6 +65,11 @@ def get_ydl_opts():
         'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'source_address': '0.0.0.0',
     }
+    
+    if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+    if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
+    
+    return opts
 
 def verify_api_key(request):
     api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
@@ -78,7 +83,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Ultimate Mode (MP3 & Audio Fixed)"
+        "mode": "Ultra Mode (Audio + Video + MP3)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -88,9 +93,6 @@ def get_formats():
     
     try:
         opts = get_ydl_opts()
-        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
-        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
@@ -102,20 +104,39 @@ def get_formats():
             }
             
             formats = []
+            seen_formats = set()
+            
             for f in info.get('formats', []):
-                # 👇 FIX: अब यह Audio और Video दोनों दिखाएगा
+                format_id = f.get('format_id')
+                if format_id in seen_formats: continue
+                
+                # 👇 FIX: वीडियो और ऑडियो दोनों को लिस्ट में जोड़ें
                 is_video = f.get('vcodec') != 'none'
                 is_audio = f.get('acodec') != 'none'
                 
                 if is_video or is_audio:
+                    filesize = f.get('filesize') or f.get('filesize_approx') or 0
+                    
+                    # Label बनाना (Video 720p या Audio 128k)
+                    if is_video:
+                        quality = f"{f.get('height')}p" if f.get('height') else "Video"
+                        type_label = "video"
+                    else:
+                        quality = f"{int(f.get('abr') or 0)}kbps"
+                        type_label = "audio"
+
                     formats.append({
-                        "format_id": f.get('format_id'),
+                        "format_id": format_id,
                         "ext": f.get('ext'),
-                        "height": f.get('height'), # 144, 360, 720 etc.
-                        "abr": f.get('abr'),       # Audio Bitrate (e.g. 128, 192)
-                        "filesize": f.get('filesize'),
-                        "type": "video" if is_video else "audio" # Frontend को पता चलेगा
+                        "quality": quality,
+                        "filesize": filesize,
+                        "type": type_label, # Frontend को पता चलेगा कि यह Audio है
+                        "note": f.get('format_note')
                     })
+                    seen_formats.add(format_id)
+
+            # अच्छी तरह से सॉर्ट करें (High Quality ऊपर)
+            formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
             return jsonify({"meta": meta, "formats": formats})
     except Exception as e:
@@ -130,12 +151,11 @@ def download_video():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
+        # अगर यूजर ने कोई फॉर्मेट चुना है तो वही डाउनलोड करो
         if format_id and format_id != 'best':
              opts['format'] = format_id
-
+        
         opts.update({'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s')})
         
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -153,10 +173,8 @@ def convert_mp3():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
-        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
-        # 👇 MP3 HIGH QUALITY FIX
+        # 👇 MP3 FIX: हाई क्वालिटी ऑडियो (192kbps)
         if FFMPEG_PATH:
             opts.update({
                 'format': 'bestaudio/best',
@@ -164,11 +182,11 @@ def convert_mp3():
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '192', # 192 High Quality
+                    'preferredquality': '192',
                 }],
             })
         else:
-            # Fallback if FFmpeg fails
+            # अगर FFmpeg नहीं है तो m4a डाउनलोड करो
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
