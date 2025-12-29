@@ -57,6 +57,7 @@ def get_ydl_opts():
         'force_ipv4': True,
         
         # 👇 YOUTUBE FIX: Use 'TV' Client (No Blocks)
+        # यह सबसे महत्वपूर्ण लाइन है, इसे TV बनाने से ब्लॉक हट जाएगा
         'extractor_args': {
             'youtube': {
                 'player_client': ['tv'] 
