@@ -81,7 +81,7 @@ def home():
     return jsonify({
         "status": "online", 
         "cookies": has_cookies, 
-        "ffmpeg": has_ffmpeg,
+        "ffmpeg": has_ffmpeg, 
         "mode": "Smart TV Mode (YouTube Fixed)"
     })
 
