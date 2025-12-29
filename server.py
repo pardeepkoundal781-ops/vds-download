@@ -20,7 +20,7 @@ API_KEYS = {
     "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
-# 👇 1. AUTO FFmpeg INSTALLER (ऑडियो और MP3 के लिए जरूरी)
+# 👇 1. AUTO FFmpeg INSTALLER
 def install_ffmpeg():
     if os.path.exists("./ffmpeg"): return "./ffmpeg"
     try:
@@ -44,25 +44,24 @@ def install_ffmpeg():
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns robust options for all platforms"""
+    """Returns robust options with Smart TV Bypass"""
     opts = {
-        'format': 'bestvideo+bestaudio/best', # Best Quality Merge
+        'format': 'bestvideo+bestaudio/best', 
         'merge_output_format': 'mp4',
-        'trim_file_name': 50, # Error 36 Fix
+        'trim_file_name': 50,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'geo_bypass': True,
-        'force_ipv4': True, # Facebook Network Fix
+        'force_ipv4': True,
         
-        # 👇 YouTube Fix (iOS Client)
+        # 👇 YOUTUBE FIX: Use 'TV' Client (No Blocks)
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'web'] 
+                'player_client': ['tv'] 
             }
         },
-        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'source_address': '0.0.0.0',
     }
     
@@ -83,7 +82,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Ultra Mode (Audio + Video + MP3)"
+        "mode": "Smart TV Mode (YouTube Fixed)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -110,14 +109,12 @@ def get_formats():
                 format_id = f.get('format_id')
                 if format_id in seen_formats: continue
                 
-                # 👇 FIX: वीडियो और ऑडियो दोनों को लिस्ट में जोड़ें
                 is_video = f.get('vcodec') != 'none'
                 is_audio = f.get('acodec') != 'none'
                 
                 if is_video or is_audio:
                     filesize = f.get('filesize') or f.get('filesize_approx') or 0
                     
-                    # Label बनाना (Video 720p या Audio 128k)
                     if is_video:
                         quality = f"{f.get('height')}p" if f.get('height') else "Video"
                         type_label = "video"
@@ -130,12 +127,11 @@ def get_formats():
                         "ext": f.get('ext'),
                         "quality": quality,
                         "filesize": filesize,
-                        "type": type_label, # Frontend को पता चलेगा कि यह Audio है
+                        "type": type_label,
                         "note": f.get('format_note')
                     })
                     seen_formats.add(format_id)
 
-            # अच्छी तरह से सॉर्ट करें (High Quality ऊपर)
             formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
             return jsonify({"meta": meta, "formats": formats})
@@ -152,7 +148,6 @@ def download_video():
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
         
-        # अगर यूजर ने कोई फॉर्मेट चुना है तो वही डाउनलोड करो
         if format_id and format_id != 'best':
              opts['format'] = format_id
         
@@ -174,19 +169,13 @@ def convert_mp3():
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
         
-        # 👇 MP3 FIX: हाई क्वालिटी ऑडियो (192kbps)
         if FFMPEG_PATH:
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
+                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}],
             })
         else:
-            # अगर FFmpeg नहीं है तो m4a डाउनलोड करो
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
@@ -195,7 +184,6 @@ def convert_mp3():
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            
             base, _ = os.path.splitext(filename)
             mp3_name = base + ".mp3"
             
