@@ -7,8 +7,6 @@ import tempfile
 import urllib.request
 import tarfile
 import shutil
-import time
-import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -54,15 +52,12 @@ FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
     """
-    ULTIMATE LONG+SHORT YouTube fix (2025 Dec)
+    Options tuned for YouTube long + short videos
     """
     opts = {
-        # Format + merge
         'format': 'bestvideo+bestaudio/best',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
-        
-        # Basic stability
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
@@ -70,27 +65,20 @@ def get_ydl_opts():
         'geo_bypass': True,
         'force_ipv4': True,
 
-        # NETWORK CRITICAL (LONG VIDEOS)
-        'retries': 20,
-        'fragment_retries': 100,        # DASH fragments retry
-        'continuedl': True,
-        'http_chunk_size': 5 * 1024 * 1024,  # 5MB chunks (smaller = stable)
-        'socket_timeout': 30,           # connection timeout
-        'extractor_retries': 5,
-        'sleep_interval': 1,            # delay between requests
-        'max_sleep_interval': 10,
+        # Network + long video stability
+        'retries': 15,               # overall retries
+        'fragment_retries': 50,      # fragment level retries (DASH/HLS)
+        'continuedl': True,          # resume partial downloads
+        'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunks help with big files
 
-        # YouTube CLIENT FIX (No TV/DRM)
+        # YouTube client config (TV removed to avoid DRM-only formats)
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'default', 'web_safari', 'web_embedded'],
-                'skip': ['hls', 'dash']  # avoid problematic streams
+                # TV client remove + safe web clients
+                'player_client': ['default', '-tv', 'web', 'web_safari', 'web_embedded']
             }
         },
-        
-        # Rate limiting bypass
         'source_address': '0.0.0.0',
-        'throttled_rate': 100000,      # slow down if throttled
     }
 
     if FFMPEG_PATH:
@@ -112,7 +100,7 @@ def home():
         "status": "online",
         "cookies": has_cookies,
         "ffmpeg": has_ffmpeg,
-        "mode": "LONG VIDEO FIXED (Dec 2025)"
+        "mode": "Long+Short Stable Mode"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -126,16 +114,14 @@ def get_formats():
 
     try:
         opts = get_ydl_opts()
-        opts['quiet'] = False  # show formats
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
             meta = {
                 "id": info.get('id'),
-                "title": info.get('title', 'Unknown'),
+                "title": info.get('title'),
                 "duration": info.get('duration'),
                 "thumbnail": info.get('thumbnail'),
-                "filesize_approx": info.get('filesize_approx'),
             }
 
             formats = []
@@ -155,7 +141,7 @@ def get_formats():
                 filesize = f.get('filesize') or f.get('filesize_approx') or 0
 
                 if is_video:
-                    quality = f"{f.get('height', 0)}p" if f.get('height') else "Video"
+                    quality = f"{f.get('height')}p" if f.get('height') else "Video"
                     type_label = "video"
                 else:
                     quality = f"{int(f.get('abr') or 0)}kbps"
@@ -163,17 +149,17 @@ def get_formats():
 
                 formats.append({
                     "format_id": format_id,
-                    "ext": f.get('ext', 'mp4'),
+                    "ext": f.get('ext'),
                     "quality": quality,
                     "filesize": filesize,
                     "type": type_label,
-                    "note": f.get('format_note', '')
+                    "note": f.get('format_note')
                 })
                 seen_formats.add(format_id)
 
-            formats.sort(key=lambda x: (x['type'] == 'video', x['filesize'] or 0), reverse=True)
+            formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
-            return jsonify({"meta": meta, "formats": formats[:20]})  # limit to 20
+            return jsonify({"meta": meta, "formats": formats})
     except Exception as e:
         logger.exception("Format extract failed")
         return jsonify({"error": "extract_failed", "detail": str(e)}), 500
@@ -184,50 +170,34 @@ def download_video():
         return jsonify({"error": "Invalid Key"}), 401
 
     url = request.args.get('url')
-    format_id = request.args.get('format_id', 'best')
+    format_id = request.args.get('format_id')
 
     if not url:
         return jsonify({"error": "missing_url"}), 400
 
-    # Anti-timeout: increase request timeout
     temp_dir = tempfile.mkdtemp()
-    
     try:
-        logger.info(f"Starting download: {url[:50]}...")
         opts = get_ydl_opts()
 
-        # Specific format override
         if format_id and format_id != 'best':
             opts['format'] = format_id
-        else:
-            # Safer format for long videos
-            opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
 
-        opts.update({
-            'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-            'restrictfilenames': True  # safe filenames
-        })
+        opts.update({'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s')})
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # Verify file exists
-        if os.path.exists(filename) and os.path.getsize(filename) > 1024:
-            return send_file(
-                filename,
-                as_attachment=True,
-                download_name=os.path.basename(filename),
-                mimetype='video/mp4'
-            )
-        else:
-            return jsonify({"error": "download_failed_empty"}), 500
-
+        return send_file(
+            filename,
+            as_attachment=True,
+            download_name=os.path.basename(filename)
+        )
     except Exception as e:
         logger.exception("Download failed")
-        return jsonify({"error": "download_failed", "detail": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
     finally:
-        # Cleanup after 5 min (async would be better)
+        # Optional: yaha async cleanup add kar sakte ho
         pass
 
 @app.route('/convert_mp3', methods=['GET'])
@@ -242,15 +212,21 @@ def convert_mp3():
     temp_dir = tempfile.mkdtemp()
     try:
         opts = get_ydl_opts()
-        opts.update({
-            'format': 'bestaudio/best',
-            'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        })
+
+        if FFMPEG_PATH:
+            opts.update({
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                }],
+            })
+        else:
+            opts.update({
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
+            })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -258,27 +234,22 @@ def convert_mp3():
             base, _ = os.path.splitext(filename)
             mp3_name = base + ".mp3"
 
-        if os.path.exists(mp3_name):
-            return send_file(
-                mp3_name,
-                as_attachment=True,
-                download_name=os.path.basename(mp3_name),
-                mimetype='audio/mpeg'
-            )
-        elif os.path.exists(filename):
-            return send_file(
-                filename,
-                as_attachment=True,
-                download_name=os.path.basename(filename)
-            )
-        else:
-            return jsonify({"error": "mp3_failed"}), 500
+        if not os.path.exists(mp3_name) and os.path.exists(filename):
+            os.rename(filename, mp3_name)
 
+        return send_file(
+            mp3_name,
+            as_attachment=True,
+            download_name=os.path.basename(mp3_name)
+        )
     except Exception as e:
         logger.exception("MP3 convert failed")
         return jsonify({"error": str(e)}), 500
+    finally:
+        # Optional: cleanup
+        pass
 
 if __name__ == '__main__':
     if not os.path.exists("./ffmpeg"):
         install_ffmpeg()
-    app.run(host='0.0.0.0', port=8080, threaded=True)
+    app.run(host='0.0.0.0', port=8080)
