@@ -52,7 +52,7 @@ FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
     """
-    Options tuned for YouTube long + short videos
+    Options tuned for YouTube long + short videos using Android Client
     """
     opts = {
         'format': 'bestvideo+bestaudio/best',
@@ -66,18 +66,20 @@ def get_ydl_opts():
         'force_ipv4': True,
 
         # Network + long video stability
-        'retries': 15,               # overall retries
-        'fragment_retries': 50,      # fragment level retries (DASH/HLS)
-        'continuedl': True,          # resume partial downloads
+        'retries': 15,                # overall retries
+        'fragment_retries': 50,       # fragment level retries (DASH/HLS)
+        'continuedl': True,           # resume partial downloads
         'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunks help with big files
 
-        # YouTube client config (TV removed to avoid DRM-only formats)
+        # 👇 YOUTUBE FIX: Use 'android' client (Best for Long Videos)
         'extractor_args': {
             'youtube': {
-                # TV client remove + safe web clients
-                'player_client': ['default', '-tv', 'web', 'web_safari', 'web_embedded']
+                'player_client': ['android', 'ios']
             }
         },
+        # Mobile User Agent to match the client
+        'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
+        
         'source_address': '0.0.0.0',
     }
 
@@ -100,7 +102,7 @@ def home():
         "status": "online",
         "cookies": has_cookies,
         "ffmpeg": has_ffmpeg,
-        "mode": "Long+Short Stable Mode"
+        "mode": "Android Client Mode (Long Video Fix)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -197,7 +199,6 @@ def download_video():
         logger.exception("Download failed")
         return jsonify({"error": str(e)}), 500
     finally:
-        # Optional: yaha async cleanup add kar sakte ho
         pass
 
 @app.route('/convert_mp3', methods=['GET'])
@@ -220,6 +221,7 @@ def convert_mp3():
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
+                    'preferredquality': '192',
                 }],
             })
         else:
@@ -246,7 +248,6 @@ def convert_mp3():
         logger.exception("MP3 convert failed")
         return jsonify({"error": str(e)}), 500
     finally:
-        # Optional: cleanup
         pass
 
 if __name__ == '__main__':
