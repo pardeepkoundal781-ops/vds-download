@@ -69,7 +69,7 @@ def get_ydl_opts():
         'retries': 15,               # overall retries
         'fragment_retries': 50,      # fragment level retries (DASH/HLS)
         'continuedl': True,          # resume partial downloads
-        'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunks help with big files
+        'http_chunk_size': 10gp * 1920 * 1080,  # 10gp chunks help with big files
 
         # YouTube client config (TV removed to avoid DRM-only formats)
         'extractor_args': {
