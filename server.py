@@ -52,46 +52,71 @@ def install_ffmpeg():
 
 FFMPEG_PATH = install_ffmpeg()
 
-def get_ydl_opts():
+def detect_platform(url):
+    """Detect YouTube or Instagram"""
+    if 'youtube.com' in url or 'youtu.be' in url:
+        return 'youtube'
+    elif 'instagram.com' in url:
+        return 'instagram'
+    return 'generic'
+
+def get_ydl_opts(url=None):
     """
-    ULTIMATE LONG+SHORT YouTube fix (2025 Dec)
+    PERFECT FIX: YouTube Long/Short + Instagram Reels/Posts (Dec 2025)
     """
-    opts = {
-        # Format + merge
-        'format': 'bestvideo+bestaudio/best',
+    platform = detect_platform(url or '')
+    
+    base_opts = {
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
-        
-        # Basic stability
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'geo_bypass': True,
         'force_ipv4': True,
-
-        # NETWORK CRITICAL (LONG VIDEOS)
         'retries': 20,
-        'fragment_retries': 100,        # DASH fragments retry
+        'fragment_retries': 100,
         'continuedl': True,
-        'http_chunk_size': 5 * 1024 * 1024,  # 5MB chunks (smaller = stable)
-        'socket_timeout': 30,           # connection timeout
-        'extractor_retries': 5,
-        'sleep_interval': 1,            # delay between requests
-        'max_sleep_interval': 10,
-
-        # YouTube CLIENT FIX (No TV/DRM)
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web', 'default', 'web_safari', 'web_embedded'],
-                'skip': ['hls', 'dash']  # avoid problematic streams
-            }
-        },
-        
-        # Rate limiting bypass
+        'http_chunk_size': 3 * 1024 * 1024,
+        'socket_timeout': 45,
+        'sleep_interval': 2,
+        'max_sleep_interval': 15,
         'source_address': '0.0.0.0',
-        'throttled_rate': 100000,      # slow down if throttled
+        'throttled_rate': 50000,
     }
+
+    # PLATFORM SPECIFIC SETTINGS
+    if platform == 'youtube':
+        opts = {
+            **base_opts,
+            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['web', 'default', 'web_safari', 'web_embedded'],
+                    'skip': ['hls', 'dash']
+                }
+            }
+        }
+    elif platform == 'instagram':
+        opts = {
+            **base_opts,
+            'format': 'best[height<=1080]/worstext=mp4',
+            'extractor_args': {
+                'instagram': {
+                    'private': False,
+                    'include_private': True
+                }
+            },
+            'extractor_retries': 15,
+            'sleep_interval': 3
+        }
+    else:
+        # Generic fallback
+        opts = {
+            **base_opts,
+            'format': 'best[height<=1080]/best'
+        }
 
     if FFMPEG_PATH:
         opts['ffmpeg_location'] = FFMPEG_PATH
@@ -112,7 +137,8 @@ def home():
         "status": "online",
         "cookies": has_cookies,
         "ffmpeg": has_ffmpeg,
-        "mode": "LONG VIDEO FIXED (Dec 2025)"
+        "mode": "YT+INSTAGRAM PERFECT FIX ✅",
+        "supported": ["youtube.com", "youtu.be", "instagram.com/reel/", "instagram.com/p/"]
     })
 
 @app.route('/formats', methods=['GET'])
@@ -125,17 +151,17 @@ def get_formats():
         return jsonify({"error": "missing_url"}), 400
 
     try:
-        opts = get_ydl_opts()
-        opts['quiet'] = False  # show formats
+        opts = get_ydl_opts(url)
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
             meta = {
+                "platform": info.get('extractor_key', 'unknown'),
                 "id": info.get('id'),
                 "title": info.get('title', 'Unknown'),
                 "duration": info.get('duration'),
                 "thumbnail": info.get('thumbnail'),
-                "filesize_approx": info.get('filesize_approx'),
+                "uploader": info.get('uploader'),
             }
 
             formats = []
@@ -173,7 +199,7 @@ def get_formats():
 
             formats.sort(key=lambda x: (x['type'] == 'video', x['filesize'] or 0), reverse=True)
 
-            return jsonify({"meta": meta, "formats": formats[:20]})  # limit to 20
+            return jsonify({"meta": meta, "formats": formats[:15]})
     except Exception as e:
         logger.exception("Format extract failed")
         return jsonify({"error": "extract_failed", "detail": str(e)}), 500
@@ -184,51 +210,44 @@ def download_video():
         return jsonify({"error": "Invalid Key"}), 401
 
     url = request.args.get('url')
-    format_id = request.args.get('format_id', 'best')
+    format_id = request.args.get('format_id')
 
     if not url:
         return jsonify({"error": "missing_url"}), 400
 
-    # Anti-timeout: increase request timeout
     temp_dir = tempfile.mkdtemp()
-    
     try:
-        logger.info(f"Starting download: {url[:50]}...")
-        opts = get_ydl_opts()
+        logger.info(f"[{detect_platform(url)}] Starting: {url[:50]}...")
+        opts = get_ydl_opts(url)
 
-        # Specific format override
-        if format_id and format_id != 'best':
+        if format_id:
             opts['format'] = format_id
-        else:
-            # Safer format for long videos
-            opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
 
         opts.update({
             'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-            'restrictfilenames': True  # safe filenames
+            'restrictfilenames': True
         })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # Verify file exists
         if os.path.exists(filename) and os.path.getsize(filename) > 1024:
+            platform = detect_platform(url)
+            mimetype = 'video/mp4' if platform in ['youtube', 'instagram'] else 'application/octet-stream'
+            
             return send_file(
                 filename,
                 as_attachment=True,
                 download_name=os.path.basename(filename),
-                mimetype='video/mp4'
+                mimetype=mimetype
             )
         else:
-            return jsonify({"error": "download_failed_empty"}), 500
+            return jsonify({"error": "empty_file"}), 500
 
     except Exception as e:
         logger.exception("Download failed")
         return jsonify({"error": "download_failed", "detail": str(e)}), 500
-    finally:
-        # Cleanup after 5 min (async would be better)
-        pass
 
 @app.route('/convert_mp3', methods=['GET'])
 def convert_mp3():
@@ -241,7 +260,7 @@ def convert_mp3():
 
     temp_dir = tempfile.mkdtemp()
     try:
-        opts = get_ydl_opts()
+        opts = get_ydl_opts(url)
         opts.update({
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
@@ -258,7 +277,7 @@ def convert_mp3():
             base, _ = os.path.splitext(filename)
             mp3_name = base + ".mp3"
 
-        if os.path.exists(mp3_name):
+        if os.path.exists(mp3_name) and os.path.getsize(mp3_name) > 1024:
             return send_file(
                 mp3_name,
                 as_attachment=True,
@@ -266,16 +285,12 @@ def convert_mp3():
                 mimetype='audio/mpeg'
             )
         elif os.path.exists(filename):
-            return send_file(
-                filename,
-                as_attachment=True,
-                download_name=os.path.basename(filename)
-            )
+            return send_file(filename, as_attachment=True)
         else:
             return jsonify({"error": "mp3_failed"}), 500
 
     except Exception as e:
-        logger.exception("MP3 convert failed")
+        logger.exception("MP3 failed")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
