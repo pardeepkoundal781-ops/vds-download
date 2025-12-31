@@ -1,211 +1,255 @@
 import os
 import logging
-from flask import Flask, request, jsonify, send_file, render_template_string
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
 import tempfile
 import urllib.request
 import tarfile
 import shutil
-import re
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
 
-# API Key (Render Environment Variable me set karo)
-API_KEY = os.environ.get('API_KEY', "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9")
+# API Keys
+API_KEYS = {
+    "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
+}
 
-FFMPEG_PATH = None
+# 1. AUTO FFmpeg INSTALLER
 def install_ffmpeg():
-    global FFMPEG_PATH
+    if os.path.exists("./ffmpeg"):
+        return "./ffmpeg"
     try:
-        if os.path.exists("./ffmpeg"): 
-            FFMPEG_PATH = "./ffmpeg"
-            return
+        logger.info("⏳ Downloading FFmpeg...")
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         filename = "ffmpeg.tar.xz"
         urllib.request.urlretrieve(url, filename)
-        with tarfile.open(filename, "r:xz") as tar: tar.extractall()
-        for root, _, files in os.walk("."):
+
+        with tarfile.open(filename, "r:xz") as tar:
+            tar.extractall()
+
+        for root, dirs, files in os.walk("."):
             if "ffmpeg" in files:
-                shutil.move(os.path.join(root, "ffmpeg"), "./ffmpeg")
+                src = os.path.join(root, "ffmpeg")
+                shutil.move(src, "./ffmpeg")
                 os.chmod("./ffmpeg", 0o755)
                 break
-        if os.path.exists(filename): os.remove(filename)
-        FFMPEG_PATH = "./ffmpeg"
-    except: pass
 
-install_ffmpeg()
+        if os.path.exists(filename):
+            os.remove(filename)
 
-def clean_url(url): return re.sub(r'^\s+|\s+$', '', url) if url else None
-def detect_platform(url): 
-    if not url: return 'generic'
-    url_lower = url.lower()
-    if re.search(r'youtube\.com|youtu\.be', url_lower): return 'youtube'
-    if 'instagram.com' in url_lower: return 'instagram'
-    if 'x.com' in url_lower or 'twitter.com' in url_lower: return 'twitter'
-    return 'generic'
+        return "./ffmpeg"
+    except Exception as e:
+        logger.error(f"FFmpeg install error: {e}")
+        return None
 
-def get_ydl_opts(url=None):
+FFMPEG_PATH = install_ffmpeg()
+
+def get_ydl_opts():
+    """
+    Options tuned for YouTube long + short videos
+    """
     opts = {
-        'format': 'best[ext=mp4:height<=720]/best[height<=720]',
-        'outtmpl': '%(title).50s.%(ext)s',
-        'restrictfilenames': True,
+        'format': 'bestvideo+bestaudio/best',
+        'merge_output_format': 'mp4',
+        'trim_file_name': 50,
         'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
         'ignoreerrors': True,
-        'retries': 10,
-        'fragment_retries': 20,
+        'geo_bypass': True,
+        'force_ipv4': True,
+
+        # Network + long video stability
+        'retries': 15,               # overall retries
+        'fragment_retries': 50,      # fragment level retries (DASH/HLS)
+        'continuedl': True,          # resume partial downloads
+        'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunks help with big files
+
+        # YouTube client config (TV removed to avoid DRM-only formats)
+        'extractor_args': {
+            'youtube': {
+                # TV client remove + safe web clients
+                'player_client': ['default', '-tv', 'web', 'web_safari', 'web_embedded']
+            }
+        },
+        'source_address': '0.0.0.0',
     }
-    if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+
+    if FFMPEG_PATH:
+        opts['ffmpeg_location'] = FFMPEG_PATH
+    if os.path.exists('cookies.txt'):
+        opts['cookiefile'] = 'cookies.txt'
+
     return opts
 
-@app.route('/', methods=['GET'])
+def verify_api_key(request):
+    api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
+    return api_key in API_KEYS
+
+@app.route('/')
 def home():
-    html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Video Downloader</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width">
-    <style>
-        body { font-family: Arial; max-width: 600px; margin: 50px auto; padding: 20px; }
-        input[type="url"] { width: 100%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        button { background: #ff4444; color: white; padding: 12px 24px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; margin: 10px 0; }
-        button:hover { background: #cc0000; }
-        .status { padding: 15px; margin: 10px 0; border-radius: 8px; }
-        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .loading { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-    </style>
-</head>
-<body>
-    <h1>🎥 Video Downloader</h1>
-    <p>Paste YouTube/Instagram/X video link:</p>
-    <input type="url" id="url" placeholder="https://youtube.com/watch?v=..." />
-    <br>
-    <button onclick="downloadVideo()">📥 Download Video</button>
-    <button onclick="downloadMp3()">🎵 Download MP3</button>
-    
-    <div id="status"></div>
-    
-    <script>
-        function showStatus(msg, type) {
-            const status = document.getElementById('status');
-            status.innerHTML = msg;
-            status.className = 'status ' + type;
-        }
-        
-        async function downloadVideo() {
-            const url = document.getElementById('url').value;
-            if (!url) return showStatus('Enter URL first!', 'error');
-            
-            showStatus('Downloading...', 'loading');
-            
-            try {
-                const response = await fetch(`/download?api_key=${API_KEY}&url=${encodeURIComponent(url)}`);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = 'video.mp4';
-                    a.click();
-                    showStatus('✅ Downloaded successfully!', 'success');
-                } else {
-                    const data = await response.json();
-                    showStatus('❌ ' + (data.error || 'Download failed'), 'error');
-                }
-            } catch(e) {
-                showStatus('❌ Network error', 'error');
+    has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌"
+    has_ffmpeg = "YES ✅" if os.path.exists('./ffmpeg') else "NO ❌"
+    return jsonify({
+        "status": "online",
+        "cookies": has_cookies,
+        "ffmpeg": has_ffmpeg,
+        "mode": "Long+Short Stable Mode"
+    })
+
+@app.route('/formats', methods=['GET'])
+def get_formats():
+    if not verify_api_key(request):
+        return jsonify({"error": "Invalid API Key"}), 401
+
+    url = request.args.get('url')
+    if not url:
+        return jsonify({"error": "missing_url"}), 400
+
+    try:
+        opts = get_ydl_opts()
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+            meta = {
+                "id": info.get('id'),
+                "title": info.get('title'),
+                "duration": info.get('duration'),
+                "thumbnail": info.get('thumbnail'),
             }
-        }
-        
-        async function downloadMp3() {
-            const url = document.getElementById('url').value;
-            if (!url) return showStatus('Enter URL first!', 'error');
-            
-            showStatus('Converting to MP3...', 'loading');
-            
-            try {
-                const response = await fetch(`/mp3?api_key=${API_KEY}&url=${encodeURIComponent(url)}`);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = 'audio.mp3';
-                    a.click();
-                    showStatus('✅ MP3 ready!', 'success');
-                } else {
-                    const data = await response.json();
-                    showStatus('❌ ' + (data.error || 'MP3 failed'), 'error');
-                }
-            } catch(e) {
-                showStatus('❌ Network error', 'error');
-            }
-        }
-    </script>
-</body>
-</html>
-    """
-    return render_template_string(html)
+
+            formats = []
+            seen_formats = set()
+
+            for f in info.get('formats', []):
+                format_id = f.get('format_id')
+                if not format_id or format_id in seen_formats:
+                    continue
+
+                is_video = f.get('vcodec') != 'none'
+                is_audio = f.get('acodec') != 'none'
+
+                if not (is_video or is_audio):
+                    continue
+
+                filesize = f.get('filesize') or f.get('filesize_approx') or 0
+
+                if is_video:
+                    quality = f"{f.get('height')}p" if f.get('height') else "Video"
+                    type_label = "video"
+                else:
+                    quality = f"{int(f.get('abr') or 0)}kbps"
+                    type_label = "audio"
+
+                formats.append({
+                    "format_id": format_id,
+                    "ext": f.get('ext'),
+                    "quality": quality,
+                    "filesize": filesize,
+                    "type": type_label,
+                    "note": f.get('format_note')
+                })
+                seen_formats.add(format_id)
+
+            formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
+
+            return jsonify({"meta": meta, "formats": formats})
+    except Exception as e:
+        logger.exception("Format extract failed")
+        return jsonify({"error": "extract_failed", "detail": str(e)}), 500
 
 @app.route('/download', methods=['GET'])
 def download_video():
-    if request.args.get('api_key') != API_KEY:
+    if not verify_api_key(request):
         return jsonify({"error": "Invalid Key"}), 401
-    
-    url = request.args.get('url', '').strip()
-    if not url or not re.match(r'https?://', url):
-        return jsonify({"error": "Invalid URL"}), 400
+
+    url = request.args.get('url')
+    format_id = request.args.get('format_id')
+
+    if not url:
+        return jsonify({"error": "missing_url"}), 400
 
     temp_dir = tempfile.mkdtemp()
     try:
-        opts = get_ydl_opts(url)
-        opts['outtmpl'] = os.path.join(temp_dir, '%(title).50s.%(ext)s')
-        
+        opts = get_ydl_opts()
+
+        if format_id and format_id != 'best':
+            opts['format'] = format_id
+
+        opts.update({'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s')})
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        if os.path.exists(filename) and os.path.getsize(filename) > 1024:
-            return send_file(filename, as_attachment=True, download_name="video.mp4")
-        return jsonify({"error": "empty_file"}), 500
-            
+        return send_file(
+            filename,
+            as_attachment=True,
+            download_name=os.path.basename(filename)
+        )
     except Exception as e:
-        return jsonify({"error": "download_failed"}), 500
+        logger.exception("Download failed")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Optional: yaha async cleanup add kar sakte ho
+        pass
 
-@app.route('/mp3', methods=['GET'])
-def download_mp3():
-    if request.args.get('api_key') != API_KEY:
+@app.route('/convert_mp3', methods=['GET'])
+def convert_mp3():
+    if not verify_api_key(request):
         return jsonify({"error": "Invalid Key"}), 401
-    
-    url = request.args.get('url', '').strip()
-    if not url or not re.match(r'https?://', url):
-        return jsonify({"error": "Invalid URL"}), 400
+
+    url = request.args.get('url')
+    if not url:
+        return jsonify({"error": "missing_url"}), 400
 
     temp_dir = tempfile.mkdtemp()
     try:
-        opts = get_ydl_opts(url)
-        opts.update({
-            'format': 'bestaudio/best',
-            'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'
-            }],
-        })
-        
+        opts = get_ydl_opts()
+
+        if FFMPEG_PATH:
+            opts.update({
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                }],
+            })
+        else:
+            opts.update({
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
+            })
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            mp3_file = filename.rsplit('.', 1)[0] + '.mp3'
+            base, _ = os.path.splitext(filename)
+            mp3_name = base + ".mp3"
 
-        if os.path.exists(mp3_file) and os.path.getsize(mp3_file) > 512:
-            return send_file(mp3_file, as_attachment=True, download_name="audio.mp3")
-        return jsonify({"error": "mp3_failed"}), 500
-            
-    except Exception:
-        return jsonify({"error": "mp3_error"}), 500
+        if not os.path.exists(mp3_name) and os.path.exists(filename):
+            os.rename(filename, mp3_name)
+
+        return send_file(
+            mp3_name,
+            as_attachment=True,
+            download_name=os.path.basename(mp3_name)
+        )
+    except Exception as e:
+        logger.exception("MP3 convert failed")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Optional: cleanup
+        pass
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    if not os.path.exists("./ffmpeg"):
+        install_ffmpeg()
+    app.run(host='0.0.0.0', port=8080)
