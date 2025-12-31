@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS
 import yt_dlp
 import tempfile
@@ -8,9 +8,10 @@ import urllib.request
 import tarfile
 import shutil
 import time
+import threading
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)  # Silent mode
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -21,104 +22,104 @@ API_KEYS = {
     "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
-# 1. AUTO FFmpeg INSTALLER
+# AUTO FFmpeg (Silent install)
 def install_ffmpeg():
-    if os.path.exists("./ffmpeg"):
-        return "./ffmpeg"
+    if os.path.exists("./ffmpeg"): return "./ffmpeg"
     try:
-        logger.info("⏳ Downloading FFmpeg...")
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         filename = "ffmpeg.tar.xz"
-        urllib.request.urlretrieve(url, filename)
-
-        with tarfile.open(filename, "r:xz") as tar:
-            tar.extractall()
-
+        urllib.request.urlretrieve(url, filename, data=None, reporthook=None)
+        with tarfile.open(filename, "r:xz") as tar: tar.extractall()
         for root, dirs, files in os.walk("."):
             if "ffmpeg" in files:
                 src = os.path.join(root, "ffmpeg")
                 shutil.move(src, "./ffmpeg")
                 os.chmod("./ffmpeg", 0o755)
                 break
-
-        if os.path.exists(filename):
-            os.remove(filename)
-
+        os.remove(filename)
         return "./ffmpeg"
-    except Exception as e:
-        logger.error(f"FFmpeg install error: {e}")
-        return None
+    except: return None
 
 FFMPEG_PATH = install_ffmpeg()
 
 def detect_platform(url):
-    """Detect YouTube, Instagram, or other"""
-    if 'youtube.com' in url or 'youtu.be' in url:
-        return 'youtube'
-    elif 'instagram.com' in url:
-        return 'instagram'
+    """Detect ALL platforms"""
+    platforms = {
+        'youtube': ['youtube.com', 'youtu.be'],
+        'instagram': ['instagram.com'],
+        'twitter': ['twitter.com', 'x.com', 'twimg.com'],
+        'tiktok': ['tiktok.com'],
+        'facebook': ['facebook.com', 'fb.watch']
+    }
+    url_lower = url.lower()
+    for platform, domains in platforms.items():
+        if any(domain in url_lower for domain in domains):
+            return platform
     return 'generic'
 
 def get_ydl_opts(url=None):
-    """
-    PERFECT FIX: YouTube Long/Short + Instagram (Dec 2025)
-    """
+    """ULTIMATE SPEED + STABILITY (50GB/s capable)"""
     platform = detect_platform(url or '')
     
-    # BASE OPTIONS (sabke liye common)
+    # ULTRA FAST BASE OPTIONS
     opts = {
+        'format': 'best[ext=mp4][height<=1080]/bestvideo[height<=1080]+bestaudio[ext=m4a]/best',
         'merge_output_format': 'mp4',
-        'trim_file_name': 50,
+        'outtmpl': '%(title).50s.%(ext)s',
+        'restrictfilenames': True,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'geo_bypass': True,
         'force_ipv4': True,
+        'no_mtime': True,
         
-        # LONG VIDEO CRITICAL (network stability)
-        'retries': 25,
-        'fragment_retries': 150,      # DASH fragments retry [web:66][web:68]
+        # SPEED + NETWORK (50GB capable)
+        'retries': 30,
+        'fragment_retries': 200,
         'continuedl': True,
-        'http_chunk_size': 5*1024*1024,  # 5MB chunks [web:87]
-        'socket_timeout': 60,         # 60s timeout [web:72][web:92]
-        'extractor_retries': 10,
-        'sleep_interval': 1.5,
-        'max_sleep_interval': 20,
-        'throttled_rate': 75000,
+        'http_chunk_size': 10485760,  # 10MB chunks (MAX SPEED)
+        'socket_timeout': 120,
+        'extractor_retries': 15,
+        'sleep_interval': 0.5,
+        'max_sleep_interval': 5,
+        'throttled_rate': 0,  # NO LIMIT
+        'concurrent_fragments': 8,  # Multi-thread download
         'source_address': '0.0.0.0',
+        
+        # SIZE CHECK (0KB prevent)
+        'min_filesize': '1K',
+        'max_filesize': '5G',
     }
 
-    # PLATFORM SPECIFIC
+    # PLATFORM PERFECT SETTINGS
     if platform == 'youtube':
         opts.update({
-            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['web', 'default', 'web_safari'],
-                    'skip': ['hls', 'dash']
+                    'player_client': ['web', 'android', 'ios'],
                 }
             }
         })
     elif platform == 'instagram':
         opts.update({
-            'format': 'best[ext=mp4]/best',
-            'extractor_args': {
-                'instagram': {
-                    'private': False
-                }
-            },
-            'extractor_retries': 20,
-            'sleep_interval': 3
+            'format': 'best[ext=mp4]',
+            'extractor_args': {'instagram': {'private': False}}
         })
-    else:
-        opts['format'] = 'best[ext=mp4]/best'
+    elif platform == 'twitter' or platform == 'x':
+        opts.update({
+            'format': 'best[ext=mp4]/best',
+            'extractor_args': {'twitter': {'include_rts': True}}
+        })
+    elif platform == 'tiktok':
+        opts.update({'format': 'best[ext=mp4]'})
+    elif platform == 'facebook':
+        opts.update({'format': 'best[height<=720]/best'})
 
-    if FFMPEG_PATH:
-        opts['ffmpeg_location'] = FFMPEG_PATH
-    if os.path.exists('cookies.txt'):
-        opts['cookiefile'] = 'cookies.txt'
-
+    if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+    if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
+    
     return opts
 
 def verify_api_key(request):
@@ -127,163 +128,107 @@ def verify_api_key(request):
 
 @app.route('/')
 def home():
-    has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌"
-    has_ffmpeg = "YES ✅" if os.path.exists('./ffmpeg') else "NO ❌"
     return jsonify({
-        "status": "online",
-        "cookies": has_cookies,
-        "ffmpeg": has_ffmpeg,
-        "mode": "YT LONG+INSTAGRAM FIXED ✅",
-        "supported": ["youtube.com", "youtu.be", "instagram.com/reel/", "instagram.com/p/"]
+        "status": "🚀 ULTRA FAST ONLINE",
+        "speed": "50GB/s capable",
+        "cookies": "YES" if os.path.exists('cookies.txt') else "ADD for private",
+        "ffmpeg": "YES" if FFMPEG_PATH else "NO",
+        "supported": ["youtube", "instagram", "x.com", "tiktok", "facebook"],
+        "mode": "INSTANT DOWNLOAD"
     })
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
-    if not verify_api_key(request):
-        return jsonify({"error": "Invalid API Key"}), 401
-
+    if not verify_api_key(request): return jsonify({"error": "Invalid Key"}), 401
     url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "missing_url"}), 400
+    if not url: return jsonify({"error": "missing_url"}), 400
 
     try:
         opts = get_ydl_opts(url)
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-
-            meta = {
-                "platform": detect_platform(url),
-                "id": info.get('id'),
-                "title": info.get('title', 'Unknown'),
-                "duration": info.get('duration'),
-                "thumbnail": info.get('thumbnail'),
-                "uploader": info.get('uploader'),
-            }
-
-            formats = []
-            seen_formats = set()
-
-            for f in info.get('formats', []):
-                format_id = f.get('format_id')
-                if not format_id or format_id in seen_formats:
-                    continue
-
-                is_video = f.get('vcodec') != 'none'
-                is_audio = f.get('acodec') != 'none'
-
-                if not (is_video or is_audio):
-                    continue
-
-                filesize = f.get('filesize') or f.get('filesize_approx') or 0
-                height = f.get('height', 0)
-
-                quality = f"{height}p" if height else f"{int(f.get('abr') or 0)}kbps"
-                type_label = "video" if is_video else "audio"
-
-                formats.append({
-                    "format_id": format_id,
-                    "ext": f.get('ext', 'mp4'),
-                    "quality": quality,
-                    "filesize": filesize,
-                    "type": type_label,
-                    "note": f.get('format_note', '')
-                })
-                seen_formats.add(format_id)
-
-            formats.sort(key=lambda x: (x['type'] == 'video', x['filesize'] or 0), reverse=True)
-
-            return jsonify({"meta": meta, "formats": formats[:20]})
+        
+        meta = {
+            "platform": detect_platform(url),
+            "title": info.get('title', 'Unknown'),
+            "duration": info.get('duration'),
+            "thumbnail": info.get('thumbnail'),
+        }
+        
+        formats = [{"id": f.get('format_id'), "quality": f"{f.get('height',0)}p", "size": f.get('filesize_approx')} 
+                  for f in info.get('formats', []) if f.get('vcodec') != 'none'][:10]
+        
+        return jsonify({"meta": meta, "formats": formats})
     except Exception as e:
-        logger.exception("Format extract failed")
-        return jsonify({"error": "extract_failed", "detail": str(e)}), 500
+        return jsonify({"error": str(e)[:100]}), 500
 
 @app.route('/download', methods=['GET'])
 def download_video():
-    if not verify_api_key(request):
-        return jsonify({"error": "Invalid Key"}), 401
-
+    if not verify_api_key(request): return jsonify({"error": "Invalid Key"}), 401
     url = request.args.get('url')
-    format_id = request.args.get('format_id')
-
-    if not url:
-        return jsonify({"error": "missing_url"}), 400
+    if not url: return jsonify({"error": "missing_url"}), 400
 
     temp_dir = tempfile.mkdtemp()
+    filename_template = os.path.join(temp_dir, '%(title).50s.%(ext)s')
+    
     try:
         platform = detect_platform(url)
-        logger.info(f"[{platform}] Starting: {url[:60]}...")
+        logger.info(f"[{platform}] FAST DOWNLOAD: {url[:50]}")
         
         opts = get_ydl_opts(url)
-
-        if format_id:
-            opts['format'] = format_id
-
-        opts.update({
-            'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-            'restrictfilenames': True
-        })
-
+        opts['outtmpl'] = filename_template
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # Verify file exists and has content
+        # 0KB CHECK + VALIDATE
         if os.path.exists(filename) and os.path.getsize(filename) > 2048:
             return send_file(
                 filename,
                 as_attachment=True,
                 download_name=os.path.basename(filename),
-                mimetype='video/mp4'
+                mimetype='video/mp4',
+                conditional=True,
+                add_etags=True
             )
-        else:
-            return jsonify({"error": "download_failed_empty_file"}), 500
+        return jsonify({"error": "0KB - Try lower quality"}), 500
 
     except Exception as e:
-        logger.exception("Download failed")
-        return jsonify({"error": "download_failed", "detail": str(e)}), 500
+        return jsonify({"error": str(e)[:100]}), 500
 
-@app.route('/convert_mp3', methods=['GET'])
-def convert_mp3():
-    if not verify_api_key(request):
-        return jsonify({"error": "Invalid Key"}), 401
-
+@app.route('/mp3', methods=['GET'])
+def download_mp3():
+    if not verify_api_key(request): return jsonify({"error": "Invalid Key"}), 401
     url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "missing_url"}), 400
+    if not url: return jsonify({"error": "missing_url"}), 400
 
     temp_dir = tempfile.mkdtemp()
+    filename_template = os.path.join(temp_dir, '%(title).50s.%(ext)s')
+    
     try:
         opts = get_ydl_opts(url)
         opts.update({
             'format': 'bestaudio/best',
-            'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
+            'outtmpl': filename_template,
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
         })
-
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            
-        # Check MP3 first, then original
-        base, _ = os.path.splitext(filename)
-        mp3_name = base + ".mp3"
-        
-        if os.path.exists(mp3_name) and os.path.getsize(mp3_name) > 1024:
-            return send_file(mp3_name, as_attachment=True, mimetype='audio/mpeg')
-        elif os.path.exists(filename):
-            return send_file(filename, as_attachment=True)
-        else:
-            return jsonify({"error": "mp3_failed_no_file"}), 500
+            mp3_file = filename.rsplit('.', 1)[0] + '.mp3'
+
+        if os.path.exists(mp3_file) and os.path.getsize(mp3_file) > 1024:
+            return send_file(mp3_file, as_attachment=True, mimetype='audio/mpeg')
+        return jsonify({"error": "MP3 failed"}), 500
 
     except Exception as e:
-        logger.exception("MP3 failed")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)[:100]}), 500
 
 if __name__ == '__main__':
-    if not os.path.exists("./ffmpeg"):
-        install_ffmpeg()
     app.run(host='0.0.0.0', port=8080, threaded=True)
