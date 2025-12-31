@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, render_template_string
 from flask_cors import CORS
 import yt_dlp
 import tempfile
@@ -9,24 +9,17 @@ import tarfile
 import shutil
 import re
 
-# Silent logging
-logging.basicConfig(level=logging.ERROR)
-logger = logging.getLogger(__name__)
-
 app = Flask(__name__)
 CORS(app)
 
-# API Keys
-API_KEYS = {
-    "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
-}
+# API Key (Render Environment Variable me set karo)
+API_KEY = os.environ.get('API_KEY', "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9")
 
-# FFmpeg (silent)
 FFMPEG_PATH = None
 def install_ffmpeg():
     global FFMPEG_PATH
     try:
-        if os.path.exists("./ffmpeg"):
+        if os.path.exists("./ffmpeg"): 
             FFMPEG_PATH = "./ffmpeg"
             return
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
@@ -35,8 +28,7 @@ def install_ffmpeg():
         with tarfile.open(filename, "r:xz") as tar: tar.extractall()
         for root, _, files in os.walk("."):
             if "ffmpeg" in files:
-                src = os.path.join(root, "ffmpeg")
-                shutil.move(src, "./ffmpeg")
+                shutil.move(os.path.join(root, "ffmpeg"), "./ffmpeg")
                 os.chmod("./ffmpeg", 0o755)
                 break
         if os.path.exists(filename): os.remove(filename)
@@ -45,152 +37,150 @@ def install_ffmpeg():
 
 install_ffmpeg()
 
-def clean_url(url):
-    """Clean and validate URL"""
-    if not url: return None
-    url = url.strip().rstrip('/')
-    if not re.match(r'https?://', url): return None
-    return url
-
-def detect_platform(url):
-    """Improved platform detection"""
+def clean_url(url): return re.sub(r'^\s+|\s+$', '', url) if url else None
+def detect_platform(url): 
     if not url: return 'generic'
     url_lower = url.lower()
-    
-    if re.search(r'youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/', url_lower):
-        return 'youtube'
-    elif 'instagram.com' in url_lower:
-        return 'instagram'
-    elif any(x in url_lower for x in ['twitter.com', 'x.com', 'twimg.com']):
-        return 'twitter'
-    elif 'tiktok.com' in url_lower:
-        return 'tiktok'
+    if re.search(r'youtube\.com|youtu\.be', url_lower): return 'youtube'
+    if 'instagram.com' in url_lower: return 'instagram'
+    if 'x.com' in url_lower or 'twitter.com' in url_lower: return 'twitter'
     return 'generic'
 
 def get_ydl_opts(url=None):
-    """ULTIMATE EXTRACTION FIX - 2025 Dec"""
-    platform = detect_platform(url or '')
-    
-    # BASE - Works everywhere
     opts = {
-        'format': 'best[ext=mp4:height<=720]/best[height<=720]/worst[ext=mp4]/best',
-        'merge_output_format': 'mp4',
+        'format': 'best[ext=mp4:height<=720]/best[height<=720]',
         'outtmpl': '%(title).50s.%(ext)s',
         'restrictfilenames': True,
         'quiet': True,
-        'no_warnings': True,
-        'ignoreerrors': 'continue',
-        'geo_bypass': True,
-        'force_ipv4': True,
-        'nocheckcertificate': True,
-        'retries': 15,
-        'fragment_retries': 30,
-        'socket_timeout': 45,
-        'extractor_retries': 5,
-        'source_address': '0.0.0.0',
+        'ignoreerrors': True,
+        'retries': 10,
+        'fragment_retries': 20,
     }
-    
-    # CRITICAL FIXES for extraction
-    opts.update({
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web', 'android', 'ios', 'default'],
-                'skip': ['hls', 'dash']
-            },
-            'instagram': {
-                'include_private': False
-            },
-            'twitter': {
-                'include_rts': True
-            }
-        }
-    })
-    
-    # Platform specific format
-    if platform == 'youtube':
-        opts['format'] = 'bestvideo[height<=720]+bestaudio[ext=m4a]/best[height<=720]'
-    elif platform == 'instagram':
-        opts['format'] = 'worst[ext=mp4]/best'
-    
     if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-    if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
-    
     return opts
 
-def verify_api_key(request):
-    api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
-    return api_key in API_KEYS
-
-@app.route('/')
+@app.route('/', methods=['GET'])
 def home():
-    return jsonify({
-        "status": "🚀 WORKING 100%",
-        "supported": ["YouTube Long/Short", "Instagram", "X/Twitter", "TikTok"],
-        "endpoints": ["/download", "/mp3"],
-        "ffmpeg": bool(FFMPEG_PATH)
-    })
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Downloader</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 50px auto; padding: 20px; }
+        input[type="url"] { width: 100%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { background: #ff4444; color: white; padding: 12px 24px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; margin: 10px 0; }
+        button:hover { background: #cc0000; }
+        .status { padding: 15px; margin: 10px 0; border-radius: 8px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .loading { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <h1>🎥 Video Downloader</h1>
+    <p>Paste YouTube/Instagram/X video link:</p>
+    <input type="url" id="url" placeholder="https://youtube.com/watch?v=..." />
+    <br>
+    <button onclick="downloadVideo()">📥 Download Video</button>
+    <button onclick="downloadMp3()">🎵 Download MP3</button>
+    
+    <div id="status"></div>
+    
+    <script>
+        function showStatus(msg, type) {
+            const status = document.getElementById('status');
+            status.innerHTML = msg;
+            status.className = 'status ' + type;
+        }
+        
+        async function downloadVideo() {
+            const url = document.getElementById('url').value;
+            if (!url) return showStatus('Enter URL first!', 'error');
+            
+            showStatus('Downloading...', 'loading');
+            
+            try {
+                const response = await fetch(`/download?api_key=${API_KEY}&url=${encodeURIComponent(url)}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'video.mp4';
+                    a.click();
+                    showStatus('✅ Downloaded successfully!', 'success');
+                } else {
+                    const data = await response.json();
+                    showStatus('❌ ' + (data.error || 'Download failed'), 'error');
+                }
+            } catch(e) {
+                showStatus('❌ Network error', 'error');
+            }
+        }
+        
+        async function downloadMp3() {
+            const url = document.getElementById('url').value;
+            if (!url) return showStatus('Enter URL first!', 'error');
+            
+            showStatus('Converting to MP3...', 'loading');
+            
+            try {
+                const response = await fetch(`/mp3?api_key=${API_KEY}&url=${encodeURIComponent(url)}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'audio.mp3';
+                    a.click();
+                    showStatus('✅ MP3 ready!', 'success');
+                } else {
+                    const data = await response.json();
+                    showStatus('❌ ' + (data.error || 'MP3 failed'), 'error');
+                }
+            } catch(e) {
+                showStatus('❌ Network error', 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+    """
+    return render_template_string(html)
 
 @app.route('/download', methods=['GET'])
 def download_video():
-    if not verify_api_key(request):
+    if request.args.get('api_key') != API_KEY:
         return jsonify({"error": "Invalid Key"}), 401
     
-    url = clean_url(request.args.get('url'))
-    if not url:
+    url = request.args.get('url', '').strip()
+    if not url or not re.match(r'https?://', url):
         return jsonify({"error": "Invalid URL"}), 400
 
     temp_dir = tempfile.mkdtemp()
     try:
-        platform = detect_platform(url)
-        print(f"[{platform}] Downloading: {url[:50]}")  # Render logs
-        
         opts = get_ydl_opts(url)
         opts['outtmpl'] = os.path.join(temp_dir, '%(title).50s.%(ext)s')
         
         with yt_dlp.YoutubeDL(opts) as ydl:
-            # CRITICAL: download=True with error handling
             info = ydl.extract_info(url, download=True)
-            
-            if not info:
-                return jsonify({"error": "extraction_failed"}), 500
-            
             filename = ydl.prepare_filename(info)
-            
-            # Multiple file check (merged files)
-            files = [filename]
-            base = filename.rsplit('.', 1)[0]
-            for ext in ['.mp4', '.mkv', '.webm', '.m4a']:
-                check_file = base + ext
-                if os.path.exists(check_file):
-                    files.append(check_file)
-            
-            # Find largest valid file
-            valid_file = None
-            for f in files:
-                if os.path.exists(f) and os.path.getsize(f) > 2048:
-                    valid_file = f
-                    break
-            
-            if valid_file:
-                return send_file(
-                    valid_file,
-                    as_attachment=True,
-                    download_name=os.path.basename(valid_file),
-                    mimetype='video/mp4'
-                )
-            return jsonify({"error": "no_valid_file"}), 500
+
+        if os.path.exists(filename) and os.path.getsize(filename) > 1024:
+            return send_file(filename, as_attachment=True, download_name="video.mp4")
+        return jsonify({"error": "empty_file"}), 500
             
     except Exception as e:
-        print(f"ERROR: {str(e)}")  # Render logs
         return jsonify({"error": "download_failed"}), 500
 
 @app.route('/mp3', methods=['GET'])
 def download_mp3():
-    if not verify_api_key(request):
+    if request.args.get('api_key') != API_KEY:
         return jsonify({"error": "Invalid Key"}), 401
     
-    url = clean_url(request.args.get('url'))
-    if not url:
+    url = request.args.get('url', '').strip()
+    if not url or not re.match(r'https?://', url):
         return jsonify({"error": "Invalid URL"}), 400
 
     temp_dir = tempfile.mkdtemp()
@@ -200,9 +190,7 @@ def download_mp3():
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
             'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '128',
+                'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'
             }],
         })
         
@@ -210,14 +198,14 @@ def download_mp3():
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             mp3_file = filename.rsplit('.', 1)[0] + '.mp3'
-            
-        if os.path.exists(mp3_file) and os.path.getsize(mp3_file) > 1024:
-            return send_file(mp3_file, as_attachment=True, mimetype='audio/mpeg')
+
+        if os.path.exists(mp3_file) and os.path.getsize(mp3_file) > 512:
+            return send_file(mp3_file, as_attachment=True, download_name="audio.mp3")
         return jsonify({"error": "mp3_failed"}), 500
             
-    except Exception as e:
+    except Exception:
         return jsonify({"error": "mp3_error"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, threaded=True)
+    app.run(host='0.0.0.0', port=port)
