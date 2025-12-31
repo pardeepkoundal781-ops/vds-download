@@ -44,8 +44,8 @@ def install_ffmpeg():
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns robust options with Smart TV Bypass"""
-    opts = {
+    """Returns robust options for all platforms"""
+    return {
         'format': 'bestvideo+bestaudio/best', 
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
@@ -57,7 +57,6 @@ def get_ydl_opts():
         'force_ipv4': True,
         
         # 👇 YOUTUBE FIX: Use 'TV' Client (No Blocks)
-        # यह सबसे महत्वपूर्ण लाइन है, इसे TV बनाने से ब्लॉक हट जाएगा
         'extractor_args': {
             'youtube': {
                 'player_client': ['tv'] 
@@ -65,11 +64,6 @@ def get_ydl_opts():
         },
         'source_address': '0.0.0.0',
     }
-    
-    if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
-    if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
-    
-    return opts
 
 def verify_api_key(request):
     api_key = request.args.get('api_key') or request.headers.get('X-API-KEY')
@@ -93,6 +87,9 @@ def get_formats():
     
     try:
         opts = get_ydl_opts()
+        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
@@ -148,6 +145,8 @@ def download_video():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
+        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
         if format_id and format_id != 'best':
              opts['format'] = format_id
@@ -169,6 +168,8 @@ def convert_mp3():
     try:
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
+        if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+        if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
         
         if FFMPEG_PATH:
             opts.update({
