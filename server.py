@@ -52,7 +52,7 @@ FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
     """
-    Options tuned for YouTube long + short videos
+    Returns robust options with updated YouTube client (TV removed)
     """
     opts = {
         'format': 'bestvideo+bestaudio/best',
@@ -64,18 +64,12 @@ def get_ydl_opts():
         'ignoreerrors': True,
         'geo_bypass': True,
         'force_ipv4': True,
-
-        # Network + long video stability
-        'retries': 15,               # overall retries
-        'fragment_retries': 50,      # fragment level retries (DASH/HLS)
-        'continuedl': True,          # resume partial downloads
-        'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunks help with big files
-
-        # YouTube client config (TV removed to avoid DRM-only formats)
+        # YouTube client config (TV client removed to avoid DRM-only formats)
         'extractor_args': {
             'youtube': {
-                # TV client remove + safe web clients
-                'player_client': ['default', '-tv', 'web', 'web_safari', 'web_embedded']
+                # Default + web clients, TV hataya gaya
+                # You can tweak order if needed
+                'player_client': ['default', 'web', 'web_safari', 'web_embedded']
             }
         },
         'source_address': '0.0.0.0',
@@ -100,7 +94,7 @@ def home():
         "status": "online",
         "cookies": has_cookies,
         "ffmpeg": has_ffmpeg,
-        "mode": "Long+Short Stable Mode"
+        "mode": "Web Client Mode (YouTube Fixed)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -197,7 +191,7 @@ def download_video():
         logger.exception("Download failed")
         return jsonify({"error": str(e)}), 500
     finally:
-        # Optional: yaha async cleanup add kar sakte ho
+        # Optional: agar chaho toh yaha cleanup ka async mechanism add kar sakte ho
         pass
 
 @app.route('/convert_mp3', methods=['GET'])
@@ -246,7 +240,7 @@ def convert_mp3():
         logger.exception("MP3 convert failed")
         return jsonify({"error": str(e)}), 500
     finally:
-        # Optional: cleanup
+        # Optional: yaha bhi temp_dir cleanup async se kar sakte ho
         pass
 
 if __name__ == '__main__':
