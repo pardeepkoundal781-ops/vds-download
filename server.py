@@ -46,8 +46,8 @@ FFMPEG_PATH = install_ffmpeg()
 def get_ydl_opts():
     """Returns options optimized for Web Client (Matches your Cookies)"""
     opts = {
-        # Best Video (1920*1080p 100gp Limit for safety) + Best Audio
-        'format': 'bestvideo[height<=1920*1080]+bestaudio/best[height<=1920*1080]',
+        # Best Video (1080p Limit for safety) + Best Audio
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
         
@@ -61,7 +61,7 @@ def get_ydl_opts():
         # Stability Settings
         'retries': 10,
         'fragment_retries': 10,
-        'http_chunk_size': 10485760, # 100gp
+        'http_chunk_size': 10485760, # 10gp
 
         # 👇 YOUTUBE FIX: Use 'web' client to match your Desktop Cookies
         'extractor_args': {
