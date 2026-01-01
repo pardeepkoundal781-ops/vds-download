@@ -44,27 +44,34 @@ def install_ffmpeg():
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns options optimized for Long & Short videos"""
+    """Returns options optimized for Web Client (Matches your Cookies)"""
     opts = {
-        'format': 'bestvideo+bestaudio/best',
+        # Best Video (1080p Limit for safety) + Best Audio
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
+        
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': True,
         'geo_bypass': True,
-        'force_ipv4': True, # Network stability
+        'force_ipv4': True,
 
-        # 👇 IMPORTANT: Android Client Long Videos के लिए बेस्ट है
+        # Stability Settings
+        'retries': 10,
+        'fragment_retries': 10,
+        'http_chunk_size': 10485760, # 10MB
+
+        # 👇 YOUTUBE FIX: Use 'web' client to match your Desktop Cookies
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios'] 
+                'player_client': ['web', 'default'] 
             }
         },
         
-        # Mobile User Agent (ताकि YouTube को लगे मोबाइल है)
-        'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        # Desktop User Agent (Matches Chrome on Windows)
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         
         'source_address': '0.0.0.0',
     }
@@ -86,7 +93,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Android Mode (Long Video Fix)"
+        "mode": "Desktop Web Mode (Matches Cookies)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -118,18 +125,18 @@ def get_formats():
                 is_audio = f.get('acodec') != 'none'
                 
                 if is_video or is_audio:
-                    # 👇 DISPLAY FORMAT FIX (1920x1080 Style)
+                    # 👇 DISPLAY FORMAT FIX (Example: 1920x1080)
                     if is_video:
-                        w = f.get('width', 0)
-                        h = f.get('height', 0)
+                        w = f.get('width')
+                        h = f.get('height')
                         if w and h:
-                            quality = f"{w}x{h}" # Ex: 1920x1080
+                            quality = f"{w}x{h}" # e.g., 1920x1080
                         else:
                             quality = f"{h}p" if h else "Video"
                         type_label = "video"
                     else:
                         abr = int(f.get('abr') or 0)
-                        quality = f"{abr} kbps" # Ex: 128 kbps
+                        quality = f"{abr} kbps" # e.g., 128 kbps
                         type_label = "audio"
 
                     formats.append({
@@ -142,12 +149,11 @@ def get_formats():
                     })
                     seen.add(fid)
 
-            # Sort: Video High Res -> Low Res, then Audio High -> Low
+            # Sort High to Low
             formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
-            return jsonify({"meta": meta, "formats": formats[:20]}) # Top 20 formats
+            return jsonify({"meta": meta, "formats": formats[:20]})
     except Exception as e:
-        logger.error(f"Format Error: {e}")
         return jsonify({"error": "extract_failed", "detail": str(e)}), 500
 
 @app.route('/download', methods=['GET'])
@@ -169,7 +175,6 @@ def download_video():
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # File Size Check
             if os.path.exists(filename) and os.path.getsize(filename) > 1024:
                 return send_file(filename, as_attachment=True, download_name=os.path.basename(filename))
             else:
@@ -186,16 +191,11 @@ def convert_mp3():
         temp_dir = tempfile.mkdtemp()
         opts = get_ydl_opts()
         
-        # MP3 High Quality Settings
         if FFMPEG_PATH:
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
+                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
             })
         else:
             opts.update({
