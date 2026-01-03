@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# API Keys
+# API Keys ✅ New key added
 API_KEYS = {
-    "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
+    "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user",
+    "rnd_CmzSSdfnqk9k7mmUzcZ1gJE1fjxD": "premium_user"  # ✅ New API key added
 }
 
 # 1. AUTO FFmpeg INSTALLER
@@ -104,7 +105,8 @@ def home():
         "status": "online",
         "cookies": has_cookies,
         "ffmpeg": has_ffmpeg,
-        "mode": "Android Mode (YouTube Long Video Fix) + All Sites"
+        "mode": "Android Mode (YouTube Long Video Fix) + All Sites",
+        "api_keys_count": len(API_KEYS)  # ✅ Shows active keys count
     })
 
 @app.route('/formats', methods=['GET'])
