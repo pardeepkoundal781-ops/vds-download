@@ -22,20 +22,27 @@ API_KEYS = {
 
 # 1. AUTO FFmpeg INSTALLER
 def install_ffmpeg():
-    if os.path.exists("./ffmpeg"): return "./ffmpeg"
+    if os.path.exists("./ffmpeg"):
+        return "./ffmpeg"
     try:
         logger.info("⏳ Downloading FFmpeg...")
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         filename = "ffmpeg.tar.xz"
         urllib.request.urlretrieve(url, filename)
-        with tarfile.open(filename, "r:xz") as tar: tar.extractall()
+
+        with tarfile.open(filename, "r:xz") as tar:
+            tar.extractall()
+
         for root, dirs, files in os.walk("."):
             if "ffmpeg" in files:
                 src = os.path.join(root, "ffmpeg")
                 shutil.move(src, "./ffmpeg")
                 os.chmod("./ffmpeg", 0o755)
                 break
-        if os.path.exists(filename): os.remove(filename)
+
+        if os.path.exists(filename):
+            os.remove(filename)
+
         return "./ffmpeg"
     except Exception as e:
         logger.error(f"FFmpeg install error: {e}")
@@ -44,10 +51,11 @@ def install_ffmpeg():
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns options optimized for Web Client (Matches your Cookies)"""
+    """
+    Options tuned for YouTube Long Videos (Android Client)
+    """
     opts = {
-        # Best Video (1080p Limit for safety) + Best Audio
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        'format': 'bestvideo+bestaudio/best',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
         
@@ -58,20 +66,20 @@ def get_ydl_opts():
         'geo_bypass': True,
         'force_ipv4': True,
 
-        # Stability Settings
-        'retries': 10,
-        'fragment_retries': 10,
-        'http_chunk_size': 10485760, # 10MB
+        # Stability for Long Videos
+        'retries': 15,
+        'fragment_retries': 50,
+        'http_chunk_size': 10485760, # 10MB Chunks
 
-        # 👇 YOUTUBE FIX: Use 'web' client to match your Desktop Cookies
+        # 👇 CLIENT FIX: 'android' client Long videos ke liye best hai
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'default'] 
+                'player_client': ['android', 'ios']
             }
         },
         
-        # Desktop User Agent (Matches Chrome on Windows)
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        # Mobile User Agent
+        'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
         
         'source_address': '0.0.0.0',
     }
@@ -93,7 +101,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Desktop Web Mode (Matches Cookies)"
+        "mode": "Android Mode (Long Video Fix)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -125,18 +133,20 @@ def get_formats():
                 is_audio = f.get('acodec') != 'none'
                 
                 if is_video or is_audio:
-                    # 👇 DISPLAY FORMAT FIX (Example: 1920x1080)
+                    # 👇 CUSTOM DISPLAY FORMAT (User Request)
                     if is_video:
-                        w = f.get('width')
-                        h = f.get('height')
-                        if w and h:
-                            quality = f"{w}x{h}" # e.g., 1920x1080
+                        width = f.get('width')
+                        height = f.get('height')
+                        # "1920*1080" format
+                        if width and height:
+                            quality = f"{width}*{height}"
                         else:
-                            quality = f"{h}p" if h else "Video"
+                            quality = f"{height}p" if height else "Video"
                         type_label = "video"
                     else:
+                        # "128" format (Only number)
                         abr = int(f.get('abr') or 0)
-                        quality = f"{abr} kbps" # e.g., 128 kbps
+                        quality = f"{abr}" 
                         type_label = "audio"
 
                     formats.append({
