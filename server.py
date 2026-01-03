@@ -22,27 +22,20 @@ API_KEYS = {
 
 # 1. AUTO FFmpeg INSTALLER
 def install_ffmpeg():
-    if os.path.exists("./ffmpeg"):
-        return "./ffmpeg"
+    if os.path.exists("./ffmpeg"): return "./ffmpeg"
     try:
         logger.info("⏳ Downloading FFmpeg...")
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         filename = "ffmpeg.tar.xz"
         urllib.request.urlretrieve(url, filename)
-
-        with tarfile.open(filename, "r:xz") as tar:
-            tar.extractall()
-
+        with tarfile.open(filename, "r:xz") as tar: tar.extractall()
         for root, dirs, files in os.walk("."):
             if "ffmpeg" in files:
                 src = os.path.join(root, "ffmpeg")
                 shutil.move(src, "./ffmpeg")
                 os.chmod("./ffmpeg", 0o755)
                 break
-
-        if os.path.exists(filename):
-            os.remove(filename)
-
+        if os.path.exists(filename): os.remove(filename)
         return "./ffmpeg"
     except Exception as e:
         logger.error(f"FFmpeg install error: {e}")
@@ -52,14 +45,12 @@ FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
     """
-    PERFECT FIX: Web Client + Stability Settings (Matches Cookies)
+    Options tuned for YouTube Long Videos (Android Client)
     """
     opts = {
-        # High Quality Video (Limit to 1080p for stability)
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        'format': 'bestvideo+bestaudio/best',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
-        
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
@@ -67,23 +58,20 @@ def get_ydl_opts():
         'geo_bypass': True,
         'force_ipv4': True,
 
-        # 👇 STABILITY SETTINGS (Download 70MB par nahi rukega)
-        'retries': 20,                # Retry more times
-        'fragment_retries': 50,       # Retry segments
-        'skip_unavailable_fragments': False,
-        'keep_fragments': True,       # Keep parts if download fails
-        'http_chunk_size': 10485760,  # 10MB Chunks
-        'socket_timeout': 60,         # 60 seconds timeout (Important)
+        # Stability for Long Videos
+        'retries': 10,
+        'fragment_retries': 10,
+        'http_chunk_size': 10485760, # 10MB Chunks
 
-        # 👇 CLIENT FIX: Use 'web' to match your Desktop Cookies.txt
+        # 👇 CLIENT FIX: 'android' client Long videos ke liye best hai
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'default'] 
+                'player_client': ['android', 'ios']
             }
         },
         
-        # Desktop User Agent (Matches Chrome)
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        # Mobile User Agent
+        'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
         
         'source_address': '0.0.0.0',
     }
@@ -105,7 +93,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Desktop Stable Mode (Long Video Fix)"
+        "mode": "Android Mode (Long Video Fix)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -137,18 +125,20 @@ def get_formats():
                 is_audio = f.get('acodec') != 'none'
                 
                 if is_video or is_audio:
-                    # DISPLAY FORMAT (1920*1080 Style)
+                    # 👇 CUSTOM DISPLAY FORMAT (User Request)
                     if is_video:
-                        w = f.get('width')
-                        h = f.get('height')
-                        if w and h:
-                            quality = f"{w}*{h}" # 1920*1080
+                        width = f.get('width')
+                        height = f.get('height')
+                        # "1920*1080" format
+                        if width and height:
+                            quality = f"{width}*{height}"
                         else:
-                            quality = f"{h}p" if h else "Video"
+                            quality = f"{height}p" if height else "Video"
                         type_label = "video"
                     else:
+                        # "128" format (Only number)
                         abr = int(f.get('abr') or 0)
-                        quality = f"{abr}"   # 128 (Only number)
+                        quality = f"{abr}" 
                         type_label = "audio"
 
                     formats.append({
@@ -164,7 +154,7 @@ def get_formats():
             # Sort High to Low
             formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
-            return jsonify({"meta": meta, "formats": formats[:25]})
+            return jsonify({"meta": meta, "formats": formats[:20]})
     except Exception as e:
         return jsonify({"error": "extract_failed", "detail": str(e)}), 500
 
@@ -187,8 +177,7 @@ def download_video():
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Check if file exists and is valid
-            if os.path.exists(filename) and os.path.getsize(filename) > 2048:
+            if os.path.exists(filename) and os.path.getsize(filename) > 1024:
                 return send_file(filename, as_attachment=True, download_name=os.path.basename(filename))
             else:
                 return jsonify({"error": "download_failed_empty"}), 500
