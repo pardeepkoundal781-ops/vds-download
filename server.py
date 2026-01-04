@@ -44,9 +44,10 @@ def install_ffmpeg():
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns options optimized for iOS Client (Bypasses Web Block)"""
+    """Returns options optimized for Web Client (Matches your Cookies)"""
     opts = {
-        'format': 'bestvideo+bestaudio/best',
+        # Best Video (1080p Limit for safety) + Best Audio
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
         
@@ -57,20 +58,20 @@ def get_ydl_opts():
         'geo_bypass': True,
         'force_ipv4': True,
 
-        # Stability Settings for Long Videos
-        'retries': 20,
-        'fragment_retries': 50,
-        'http_chunk_size': 10485760, # 10MB Chunks
+        # Stability Settings
+        'retries': 10,
+        'fragment_retries': 10,
+        'http_chunk_size': 10485760, # 10MB
 
-        # 👇 YOUTUBE FIX: Use 'ios' client (Best for Cloud Servers)
+        # 👇 YOUTUBE FIX: Use 'web' client to match your Desktop Cookies
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios'] 
+                'player_client': ['web', 'default'] 
             }
         },
         
-        # iPhone User Agent
-        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.2 Mobile/15E148 Safari/604.1',
+        # Desktop User Agent (Matches Chrome on Windows)
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         
         'source_address': '0.0.0.0',
     }
@@ -92,7 +93,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "iOS Mode (Long Video Fix)"
+        "mode": "Desktop Web Mode (Matches Cookies)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -124,18 +125,18 @@ def get_formats():
                 is_audio = f.get('acodec') != 'none'
                 
                 if is_video or is_audio:
-                    # 👇 CUSTOM DISPLAY FORMAT (Your Request: 1920*1080)
+                    # 👇 DISPLAY FORMAT FIX (Example: 1920x1080)
                     if is_video:
                         w = f.get('width')
                         h = f.get('height')
                         if w and h:
-                            quality = f"{w}*{h}" # Output: 1920*1080
+                            quality = f"{w}x{h}" # e.g., 1920x1080
                         else:
                             quality = f"{h}p" if h else "Video"
                         type_label = "video"
                     else:
                         abr = int(f.get('abr') or 0)
-                        quality = f"{abr}"   # Output: 128 (Only number)
+                        quality = f"{abr} kbps" # e.g., 128 kbps
                         type_label = "audio"
 
                     formats.append({
@@ -151,7 +152,7 @@ def get_formats():
             # Sort High to Low
             formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
-            return jsonify({"meta": meta, "formats": formats[:25]})
+            return jsonify({"meta": meta, "formats": formats[:20]})
     except Exception as e:
         return jsonify({"error": "extract_failed", "detail": str(e)}), 500
 
