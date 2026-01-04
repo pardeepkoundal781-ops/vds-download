@@ -15,31 +15,27 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# API Keys ✅ New key added
+# API Keys
 API_KEYS = {
-    "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user",
-    "rnd_CmzSSdfnqk9k7mmUzcZ1gJE1fjxD": "premium_user"  # ✅ New API key added
+    "VDS-KEY-9f1a82c7-44b3-49d9-ae92-8d73f5c922ea-78hD92jKQpL0xF3B6vPz9": "premium_user"
 }
 
 # 1. AUTO FFmpeg INSTALLER
 def install_ffmpeg():
-    if os.path.exists("./ffmpeg"):
-        return "./ffmpeg"
+    if os.path.exists("./ffmpeg"): return "./ffmpeg"
     try:
         logger.info("⏳ Downloading FFmpeg...")
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         filename = "ffmpeg.tar.xz"
         urllib.request.urlretrieve(url, filename)
-        with tarfile.open(filename, "r:xz") as tar:
-            tar.extractall()
+        with tarfile.open(filename, "r:xz") as tar: tar.extractall()
         for root, dirs, files in os.walk("."):
             if "ffmpeg" in files:
                 src = os.path.join(root, "ffmpeg")
                 shutil.move(src, "./ffmpeg")
                 os.chmod("./ffmpeg", 0o755)
                 break
-        if os.path.exists(filename):
-            os.remove(filename)
+        if os.path.exists(filename): os.remove(filename)
         return "./ffmpeg"
     except Exception as e:
         logger.error(f"FFmpeg install error: {e}")
@@ -47,15 +43,14 @@ def install_ffmpeg():
 
 FFMPEG_PATH = install_ffmpeg()
 
-def get_ydl_opts(url=None):
-    """
-    Generic options tuned for long videos (YouTube, Facebook, etc.).
-    YouTube‑specific client tweak is applied only for YouTube URLs.
-    """
+def get_ydl_opts():
+    """Returns options optimized for Web Client (Matches your Cookies)"""
     opts = {
-        'format': 'bestvideo+bestaudio/best',
+        # Best Video (1080p Limit for safety) + Best Audio
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
+        
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
@@ -63,34 +58,30 @@ def get_ydl_opts(url=None):
         'geo_bypass': True,
         'force_ipv4': True,
 
-        # Stability for Long Videos (all sites)
-        'retries': 10,
-        'fragment_retries': 10,
-        'http_chunk_size': 10485760,  # 10MB
-        'concurrent_fragment_downloads': 1,
+        # 👇 STABILITY SETTINGS (Long Video Fix)
+        'retries': 20,                # ज्यादा कोशिश करेगा
+        'fragment_retries': 50,       # वीडियो के टुकड़ों के लिए ज्यादा कोशिश
+        'skip_unavailable_fragments': False,
+        'keep_fragments': True,       # अगर फेल हो तो पुराना हिस्सा रखे
+        'http_chunk_size': 10485760,  # 10MB Chunks (Download को स्मूथ रखेगा)
+        'socket_timeout': 60,         # 60 सेकंड टाइमआउट (ताकि जल्दी बंद न हो)
 
-        # Mobile User Agent (helps with some CDNs)
-        'user_agent': (
-            'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
-            '(KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36'
-        ),
-
+        # 👇 CLIENT FIX: 'web' client आपकी cookies.txt के साथ सही काम करेगा
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['web', 'default'] 
+            }
+        },
+        
+        # Desktop User Agent (ताकि YouTube को लगे यह कंप्यूटर है)
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        
         'source_address': '0.0.0.0',
     }
-
-    # YouTube‑only: Android/iOS client to fix long video issues
-    if url and ('youtube.com' in url or 'youtu.be' in url):
-        opts['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios']
-            }
-        }
-
-    if FFMPEG_PATH:
-        opts['ffmpeg_location'] = FFMPEG_PATH
-    if os.path.exists('cookies.txt'):
-        opts['cookiefile'] = 'cookies.txt'
-
+    
+    if FFMPEG_PATH: opts['ffmpeg_location'] = FFMPEG_PATH
+    if os.path.exists('cookies.txt'): opts['cookiefile'] = 'cookies.txt'
+    
     return opts
 
 def verify_api_key(request):
@@ -102,60 +93,53 @@ def home():
     has_cookies = "YES ✅" if os.path.exists('cookies.txt') else "NO ❌"
     has_ffmpeg = "YES ✅" if os.path.exists('./ffmpeg') else "NO ❌"
     return jsonify({
-        "status": "online",
-        "cookies": has_cookies,
+        "status": "online", 
+        "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Android Mode (YouTube Long Video Fix) + All Sites",
-        "api_keys_count": len(API_KEYS)  # ✅ Shows active keys count
+        "mode": "Desktop Stable Mode (Long Video Fix)"
     })
 
 @app.route('/formats', methods=['GET'])
 def get_formats():
-    if not verify_api_key(request):
-        return jsonify({"error": "Invalid API Key"}), 401
-
+    if not verify_api_key(request): return jsonify({"error": "Invalid API Key"}), 401
     url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "missing_url"}), 400
-
+    if not url: return jsonify({"error": "missing_url"}), 400
+    
     try:
-        opts = get_ydl_opts(url)
+        opts = get_ydl_opts()
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-
+            
             meta = {
                 "id": info.get('id'),
                 "title": info.get('title'),
                 "duration": info.get('duration'),
                 "thumbnail": info.get('thumbnail'),
             }
-
+            
             formats = []
             seen = set()
-
+            
             for f in info.get('formats', []):
                 fid = f.get('format_id')
-                if not fid or fid in seen:
-                    continue
-
+                if not fid or fid in seen: continue
+                
                 is_video = f.get('vcodec') != 'none'
                 is_audio = f.get('acodec') != 'none'
-
+                
                 if is_video or is_audio:
-                    # CUSTOM DISPLAY FORMAT
+                    # 👇 DISPLAY FORMAT FIX (Example: 1920x1080)
                     if is_video:
-                        width = f.get('width')
-                        height = f.get('height')
-                        # "1920*1080" format
-                        if width and height:
-                            quality = f"{width}*{height}"
+                        w = f.get('width')
+                        h = f.get('height')
+                        if w and h:
+                            quality = f"{w}*{h}" # e.g., 1920*1080
                         else:
-                            quality = f"{height}p" if height else "Video"
+                            quality = f"{h}p" if h else "Video"
                         type_label = "video"
                     else:
-                        # "128" format (Only number)
                         abr = int(f.get('abr') or 0)
-                        quality = f"{abr}"
+                        quality = f"{abr}"   # 128 (Only number)
                         type_label = "audio"
 
                     formats.append({
@@ -168,7 +152,7 @@ def get_formats():
                     })
                     seen.add(fid)
 
-            # Sort High to Low (videos first, then by filesize)
+            # Sort High to Low
             formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
             return jsonify({"meta": meta, "formats": formats[:20]})
@@ -177,35 +161,26 @@ def get_formats():
 
 @app.route('/download', methods=['GET'])
 def download_video():
-    if not verify_api_key(request):
-        return jsonify({"error": "Invalid Key"}), 401
-
+    if not verify_api_key(request): return jsonify({"error": "Invalid Key"}), 401
     url = request.args.get('url')
     format_id = request.args.get('format_id')
-
-    if not url:
-        return jsonify({"error": "missing_url"}), 400
-
+    
     try:
         temp_dir = tempfile.mkdtemp()
-        opts = get_ydl_opts(url)
-
+        opts = get_ydl_opts()
+        
         if format_id and format_id != 'best':
-            # For all sites, yt-dlp accepts format_id directly
-            opts['format'] = format_id
+             opts['format'] = format_id
 
         opts.update({'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s')})
-
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-
+            
+            # Check if file exists and is valid
             if os.path.exists(filename) and os.path.getsize(filename) > 1024:
-                return send_file(
-                    filename,
-                    as_attachment=True,
-                    download_name=os.path.basename(filename)
-                )
+                return send_file(filename, as_attachment=True, download_name=os.path.basename(filename))
             else:
                 return jsonify({"error": "download_failed_empty"}), 500
     except Exception as e:
@@ -213,51 +188,38 @@ def download_video():
 
 @app.route('/convert_mp3', methods=['GET'])
 def convert_mp3():
-    if not verify_api_key(request):
-        return jsonify({"error": "Invalid Key"}), 401
-
+    if not verify_api_key(request): return jsonify({"error": "Invalid Key"}), 401
     url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "missing_url"}), 400
-
+    
     try:
         temp_dir = tempfile.mkdtemp()
-        opts = get_ydl_opts(url)
-
+        opts = get_ydl_opts()
+        
         if FFMPEG_PATH:
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192'
-                }],
+                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
             })
         else:
             opts.update({
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title).50s.%(ext)s'),
             })
-
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             base, _ = os.path.splitext(filename)
             mp3_name = base + ".mp3"
-
+            
             if not os.path.exists(mp3_name) and os.path.exists(filename):
                 os.rename(filename, mp3_name)
-
-            return send_file(
-                mp3_name,
-                as_attachment=True,
-                download_name=os.path.basename(mp3_name)
-            )
+                
+            return send_file(mp3_name, as_attachment=True, download_name=os.path.basename(mp3_name))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    if not os.path.exists("./ffmpeg"):
-        install_ffmpeg()
+    if not os.path.exists("./ffmpeg"): install_ffmpeg()
     app.run(host='0.0.0.0', port=8080)
