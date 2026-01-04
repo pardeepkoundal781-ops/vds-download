@@ -44,10 +44,9 @@ def install_ffmpeg():
 FFMPEG_PATH = install_ffmpeg()
 
 def get_ydl_opts():
-    """Returns options optimized for Web Client (Matches your Cookies)"""
+    """Returns options optimized for iOS Client (Bypasses Web Block)"""
     opts = {
-        # Best Video (1080p Limit for safety) + Best Audio
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        'format': 'bestvideo+bestaudio/best',
         'merge_output_format': 'mp4',
         'trim_file_name': 50,
         
@@ -58,23 +57,20 @@ def get_ydl_opts():
         'geo_bypass': True,
         'force_ipv4': True,
 
-        # 👇 STABILITY SETTINGS (Long Video Fix)
-        'retries': 20,                # ज्यादा कोशिश करेगा
-        'fragment_retries': 50,       # वीडियो के टुकड़ों के लिए ज्यादा कोशिश
-        'skip_unavailable_fragments': False,
-        'keep_fragments': True,       # अगर फेल हो तो पुराना हिस्सा रखे
-        'http_chunk_size': 10485760,  # 10MB Chunks (Download को स्मूथ रखेगा)
-        'socket_timeout': 60,         # 60 सेकंड टाइमआउट (ताकि जल्दी बंद न हो)
+        # Stability Settings for Long Videos
+        'retries': 20,
+        'fragment_retries': 50,
+        'http_chunk_size': 10485760, # 10MB Chunks
 
-        # 👇 CLIENT FIX: 'web' client आपकी cookies.txt के साथ सही काम करेगा
+        # 👇 YOUTUBE FIX: Use 'ios' client (Best for Cloud Servers)
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'default'] 
+                'player_client': ['ios'] 
             }
         },
         
-        # Desktop User Agent (ताकि YouTube को लगे यह कंप्यूटर है)
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        # iPhone User Agent
+        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.2 Mobile/15E148 Safari/604.1',
         
         'source_address': '0.0.0.0',
     }
@@ -96,7 +92,7 @@ def home():
         "status": "online", 
         "cookies": has_cookies, 
         "ffmpeg": has_ffmpeg,
-        "mode": "Desktop Stable Mode (Long Video Fix)"
+        "mode": "iOS Mode (Long Video Fix)"
     })
 
 @app.route('/formats', methods=['GET'])
@@ -128,18 +124,18 @@ def get_formats():
                 is_audio = f.get('acodec') != 'none'
                 
                 if is_video or is_audio:
-                    # 👇 DISPLAY FORMAT FIX (Example: 1920x1080)
+                    # 👇 CUSTOM DISPLAY FORMAT (Your Request: 1920*1080)
                     if is_video:
                         w = f.get('width')
                         h = f.get('height')
                         if w and h:
-                            quality = f"{w}*{h}" # e.g., 1920*1080
+                            quality = f"{w}*{h}" # Output: 1920*1080
                         else:
                             quality = f"{h}p" if h else "Video"
                         type_label = "video"
                     else:
                         abr = int(f.get('abr') or 0)
-                        quality = f"{abr}"   # 128 (Only number)
+                        quality = f"{abr}"   # Output: 128 (Only number)
                         type_label = "audio"
 
                     formats.append({
@@ -155,7 +151,7 @@ def get_formats():
             # Sort High to Low
             formats.sort(key=lambda x: (x['type'] == 'video', x['filesize']), reverse=True)
 
-            return jsonify({"meta": meta, "formats": formats[:20]})
+            return jsonify({"meta": meta, "formats": formats[:25]})
     except Exception as e:
         return jsonify({"error": "extract_failed", "detail": str(e)}), 500
 
@@ -178,7 +174,6 @@ def download_video():
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Check if file exists and is valid
             if os.path.exists(filename) and os.path.getsize(filename) > 1024:
                 return send_file(filename, as_attachment=True, download_name=os.path.basename(filename))
             else:
