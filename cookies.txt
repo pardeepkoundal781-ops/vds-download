@@ -528,6 +528,11 @@ ydl_opts = {
     'cookiefile': 'youtube.com_cookies.txt',
     # baki options...
 }
+ydl_opts = {
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'nocheckcertificate': True,
+    'quiet': True,
+}
 www.pythonanywhere.com	FALSE	/	TRUE	1798653472	csrftoken	YKPMuVNGWdukpudSJhLZ9DJCDBbHPKhwFBZgjAYPVmIdnDrYhKgH4umnVLaezYtN
 www.pythonanywhere.com	FALSE	/	FALSE	1798739793	cookie_warning_seen	True
 .www.pythonanywhere.com	TRUE	/	FALSE	1801763793	_ga	GA1.1.451057319.1767203793
