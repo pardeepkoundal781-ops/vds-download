@@ -537,6 +537,24 @@ www.pythonanywhere.com	FALSE	/	TRUE	1798653472	csrftoken	YKPMuVNGWdukpudSJhLZ9DJ
 www.pythonanywhere.com	FALSE	/	FALSE	1798739793	cookie_warning_seen	True
 .www.pythonanywhere.com	TRUE	/	FALSE	1801763793	_ga	GA1.1.451057319.1767203793
 .www.pythonanywhere.com	TRUE	/	FALSE	1801763873	_ga_DHJF51F24N	GS2.1.s1767203792$o1$g1$t1767203872$j42$l0$h0
+import yt_dlp
+
+ydl_opts = {
+    'cookiefile': 'cookies.txt',  # Aapki cookies file ka naam
+    'format': 'best',
+    'quiet': True,
+    'no_warnings': True,
+    # YouTube ko dhoka dene ke liye headers
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-us,en;q=0.5',
+    }
+}
+
+# Example usage
+with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    info = ydl.extract_info(video_url, download=False)
 .chromewebstore.google.com	TRUE	/	FALSE	1801838270	_ga_DQ86HPHR90	GS2.1.s1767278270$o1$g0$t1767278270$j60$l0$h0
 .tiktok.com	TRUE	/	TRUE	1783012323	tt_chain_token	Vw1dN4MIAz3fUih1jarjHg==
 .www.tiktok.com	TRUE	/	TRUE	1793380324	tiktok_webapp_theme_source	auto
