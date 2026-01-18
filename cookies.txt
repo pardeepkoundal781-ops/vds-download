@@ -524,6 +524,10 @@ console.cloud.google.com	FALSE	/	TRUE	1801710293	__Secure-OSID	g.a0005AgBRwAFtKW
 openai.com	FALSE	/	FALSE	1798738862	country	IN
 .platform.openai.com	TRUE	/	TRUE	1798738950	__stripe_mid	f4361167-cb9a-400c-a57e-9793d5939475961d1b
 help.openai.com	FALSE	/	TRUE	1798739097	__session	eyJzZXNzaW9uSWQiOiJkMDIzYTNhOS05ODAxLTQ0YWUtYTMxNi1mNDUxN2YzZWRjNjEifQ%3D%3D.4I6QKtB5M0zE7XtbcWJf635T3DJ%2BZn%2Bo4g3CERLHqSE
+ydl_opts = {
+    'cookiefile': 'youtube.com_cookies.txt',
+    # baki options...
+}
 www.pythonanywhere.com	FALSE	/	TRUE	1798653472	csrftoken	YKPMuVNGWdukpudSJhLZ9DJCDBbHPKhwFBZgjAYPVmIdnDrYhKgH4umnVLaezYtN
 www.pythonanywhere.com	FALSE	/	FALSE	1798739793	cookie_warning_seen	True
 .www.pythonanywhere.com	TRUE	/	FALSE	1801763793	_ga	GA1.1.451057319.1767203793
